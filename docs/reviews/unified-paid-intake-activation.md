@@ -98,6 +98,12 @@ The synthetic native test demonstrates the schema but is not production evidence
 
 ## Execution sequence
 
+A narrow [schema-only exception](unified-paid-intake-schema-only.md) permits only
+step 2's additive migration transaction before step 1's explicit legacy decision,
+after exact-source and provider-evidence approval. This exception excludes every
+runtime/website deployment, provider/catalog change and gate or legacy action.
+The rest of this sequence retains its original ordering and prerequisites.
+
 1. Close provider defects and independent review against the exact source revision.
    Record explicit owner decisions. Preserve all historical frozen amounts.
 2. Apply the separately reviewed 0063/0064 migration runner with the gate disabled.

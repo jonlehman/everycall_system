@@ -1,0 +1,926 @@
+[
+  {
+    "source": 0,
+    "target": 2,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFOq2HodUYhbMcaIoNB7Ig",
+        "total": 12450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFOc2HodUYhbMcr3FK4v14",
+        "total": 12450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFOI2HodUYhbMccneAjFqD"
+  },
+  {
+    "source": 0,
+    "target": 3,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFOs2HodUYhbMc0EFSvzVQ",
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFOf2HodUYhbMcqq0CmdWc",
+        "total": 126990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFOI2HodUYhbMcPfZdW4NK"
+  },
+  {
+    "source": 0,
+    "target": 0,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFOx2HodUYhbMcOaNjqywO",
+        "total": 7450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFOh2HodUYhbMc6NdAZCrO",
+        "total": 7450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFOJ2HodUYhbMcrRtTI4Ps"
+  },
+  {
+    "source": 0,
+    "target": 1,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFOx2HodUYhbMc2vGn9GBJ",
+        "total": 75990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFOm2HodUYhbMcx8QqJfOr",
+        "total": 75990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFOJ2HodUYhbMc2DoeyA2P"
+  },
+  {
+    "source": 0,
+    "target": 4,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFPd2HodUYhbMcwX9akVa7",
+        "total": 17450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFPM2HodUYhbMcSRCmbNNf",
+        "total": 17450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFP32HodUYhbMc1mbK6NJz"
+  },
+  {
+    "source": 0,
+    "target": 5,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFPm2HodUYhbMcZw3IWt0S",
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFPQ2HodUYhbMcys0fgHR5",
+        "total": 177990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFP32HodUYhbMcK43lrAvU"
+  },
+  {
+    "source": 1,
+    "target": 1,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFPo2HodUYhbMc0QA97Ux4",
+        "total": 75990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFPV2HodUYhbMcEjWbJPPi",
+        "total": 75990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFP82HodUYhbMcmHmk0pni"
+  },
+  {
+    "source": 1,
+    "target": 3,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFQh2HodUYhbMccPTBodWy",
+        "total": 126990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFQO2HodUYhbMcRNMBt9kE",
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFPy2HodUYhbMchLlc3CJ6"
+  },
+  {
+    "source": 1,
+    "target": 0,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFQt2HodUYhbMccVLfRBjA",
+        "total": 7450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFQc2HodUYhbMcci8gZ4nw",
+        "total": 7450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFP82HodUYhbMcilNIuOp1"
+  },
+  {
+    "source": 1,
+    "target": 0,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-1-0 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_cQNqRKmLzSI03N\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 1,
+    "target": 2,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFRM2HodUYhbMcT670Wxye",
+        "total": 12450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFR42HodUYhbMcwWprV9oo",
+        "total": 12450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFPn2HodUYhbMcVQsN9eSG"
+  },
+  {
+    "source": 1,
+    "target": 2,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-1-2 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_ZUi4IhVjUcNvg8\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 1,
+    "target": 4,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFRN2HodUYhbMcCUbKDJKP",
+        "total": 17450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFR62HodUYhbMcxgsWdX3Q",
+        "total": 17450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFQ22HodUYhbMcgM4eCDnX"
+  },
+  {
+    "source": 1,
+    "target": 4,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-1-4 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_pWzISNFQPt2bUs\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 1,
+    "target": 5,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFRV2HodUYhbMcL4VqEzaX",
+        "total": 177990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFRG2HodUYhbMclrosfdqo",
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFQt2HodUYhbMcOVlnRjrk"
+  },
+  {
+    "source": 2,
+    "target": 0,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFRl2HodUYhbMcRuC3EWwr",
+        "total": 7450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFRT2HodUYhbMcnEcdfYTy",
+        "total": 7450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFR52HodUYhbMcHYkSHocn"
+  },
+  {
+    "source": 2,
+    "target": 1,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFS72HodUYhbMcZrMKmJXL",
+        "total": 75990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFRs2HodUYhbMccLCk34xS",
+        "total": 75990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFRX2HodUYhbMcEtBtLa1r"
+  },
+  {
+    "source": 2,
+    "target": 2,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFSD2HodUYhbMc0mJnL4Fu",
+        "total": 12450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFS02HodUYhbMcTDAFg2lr",
+        "total": 12450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFRY2HodUYhbMcEytmRxvD"
+  },
+  {
+    "source": 2,
+    "target": 4,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFSQ2HodUYhbMcDxMsu98K",
+        "total": 17450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFSG2HodUYhbMcZh0Fb8sa",
+        "total": 17450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFRu2HodUYhbMciP9o53mc"
+  },
+  {
+    "source": 2,
+    "target": 3,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFSR2HodUYhbMc0p5KG17W",
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFS82HodUYhbMcpEh6TLJo",
+        "total": 126990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFRj2HodUYhbMctqcjvQGi"
+  },
+  {
+    "source": 2,
+    "target": 5,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFSn2HodUYhbMcVqBzJdOU",
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFSZ2HodUYhbMcvfmCvJxv",
+        "total": 177990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFSH2HodUYhbMcysIepv2R"
+  },
+  {
+    "source": 3,
+    "target": 1,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFTF2HodUYhbMcFlRswZfA",
+        "total": 75990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFSz2HodUYhbMcHXy2vYOd",
+        "total": 75990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFSb2HodUYhbMch9kv8hMl"
+  },
+  {
+    "source": 3,
+    "target": 3,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFTW2HodUYhbMc72XJgbvk",
+        "total": 126990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFTJ2HodUYhbMc9K6RWbtO",
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFT22HodUYhbMcMS20zqjg"
+  },
+  {
+    "source": 3,
+    "target": 0,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFTa2HodUYhbMcpk781hDG",
+        "total": 7450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFTN2HodUYhbMcfb6p573L",
+        "total": 7450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFSN2HodUYhbMcYtITHu84"
+  },
+  {
+    "source": 3,
+    "target": 0,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-3-0 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_DySOrIf3eCIWS5\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 3,
+    "target": 2,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFTi2HodUYhbMcfPX043ag",
+        "total": 12450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFTQ2HodUYhbMckh1mXynb",
+        "total": 12450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFSd2HodUYhbMcMRcJjjbs"
+  },
+  {
+    "source": 3,
+    "target": 2,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-3-2 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_hcnPF1UtJRPxAb\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 3,
+    "target": 5,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFUC2HodUYhbMckzyfJP3l",
+        "total": 177990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFTz2HodUYhbMcqdgLf1Ed",
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFTh2HodUYhbMcCbqRVOTE"
+  },
+  {
+    "source": 4,
+    "target": 0,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFUM2HodUYhbMcHXZefEZ8",
+        "total": 7450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFU82HodUYhbMcNIcePd4w",
+        "total": 7450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFTn2HodUYhbMcwmso1F3I"
+  },
+  {
+    "source": 4,
+    "target": 1,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFUY2HodUYhbMcX9EG7gxA",
+        "total": 75990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFUJ2HodUYhbMcxpQJZ7kW",
+        "total": 75990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFTt2HodUYhbMchziCT550"
+  },
+  {
+    "source": 4,
+    "target": 2,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFUw2HodUYhbMcmeda7xJJ",
+        "total": 12450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFUg2HodUYhbMc5a8SgG9P",
+        "total": 12450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFUN2HodUYhbMcilLYZVuV"
+  },
+  {
+    "source": 3,
+    "target": 4,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFUy2HodUYhbMcWA9J9v8Z",
+        "total": 17450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFUk2HodUYhbMcMBuVEA7O",
+        "total": 17450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFTQ2HodUYhbMcuu4dt5zM"
+  },
+  {
+    "source": 3,
+    "target": 4,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-3-4 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_VFmOTSDCznynRQ\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 4,
+    "target": 3,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFV62HodUYhbMcWximtCft",
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFUp2HodUYhbMcDVFmySwE",
+        "total": 126990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFUX2HodUYhbMceiBbCUmx"
+  },
+  {
+    "source": 4,
+    "target": 4,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2027-04-30T12:00:00.000Z",
+    "nextEnd": "2027-05-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFVF2HodUYhbMcyTGpXhi5",
+        "total": 17450,
+        "status": "paid",
+        "created": "2027-04-30T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFV32HodUYhbMcX3BWzK0c",
+        "total": 17450,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFUi2HodUYhbMcktOthOWL"
+  },
+  {
+    "source": 4,
+    "target": 5,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2027-03-31T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2029-03-31T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFVl2HodUYhbMc2ZAn4XCx",
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFVV2HodUYhbMc0cmMeLS9",
+        "total": 177990,
+        "status": "paid",
+        "created": "2027-03-31T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFV82HodUYhbMcPHPBRsxF"
+  },
+  {
+    "source": 5,
+    "target": 1,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFVr2HodUYhbMcxQ3k6KW6",
+        "total": 75990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFVd2HodUYhbMcYMIvlJcO",
+        "total": 75990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFVI2HodUYhbMc9IVbrzP6"
+  },
+  {
+    "source": 5,
+    "target": 3,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFWR2HodUYhbMcn2VAEio5",
+        "total": 126990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFWF2HodUYhbMcWvKVV9zQ",
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFVw2HodUYhbMcNfdvQEuU"
+  },
+  {
+    "source": 5,
+    "target": 0,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFWa2HodUYhbMcrDp8UGl8",
+        "total": 7450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFWN2HodUYhbMcASz7rCVw",
+        "total": 7450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFV82HodUYhbMcrzTKvCbU"
+  },
+  {
+    "source": 5,
+    "target": 0,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-5-0 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_bhL4vWJqz4tSqA\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 5,
+    "target": 2,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFWq2HodUYhbMcNs0yn1wX",
+        "total": 12450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFWe2HodUYhbMcrXLsRTsQ",
+        "total": 12450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFVO2HodUYhbMcISHyvp9e"
+  },
+  {
+    "source": 5,
+    "target": 2,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-5-2 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_oIEH8OQ3xaL2nU\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "source": 5,
+    "target": 5,
+    "pass": true,
+    "variant": "anniversary_end",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2029-02-28T12:00:00.000Z",
+    "nextEnd": "2030-02-28T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFX82HodUYhbMcU8N2l6WW",
+        "total": 177990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFWu2HodUYhbMcLRqTYbp3",
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFWc2HodUYhbMc4i4x49PD"
+  },
+  {
+    "source": 5,
+    "target": 4,
+    "pass": true,
+    "variant": "anniversary_paid_bridge",
+    "effectiveAt": "2028-02-29T12:00:00.000Z",
+    "firstEnd": "2028-03-31T12:00:00.000Z",
+    "nextEnd": "2028-04-30T12:00:00.000Z",
+    "invoices": [
+      {
+        "id": "in_1UbFXQ2HodUYhbMcGsvodBA9",
+        "total": 17450,
+        "status": "paid",
+        "created": "2028-03-31T12:00:00.000Z"
+      },
+      {
+        "id": "in_1UbFXC2HodUYhbMcPd82MveQ",
+        "total": 17450,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "subscription": "sub_1UbFW62HodUYhbMcJyOrrbVY"
+  },
+  {
+    "source": 5,
+    "target": 4,
+    "cleanup": false,
+    "error": "Command failed: /usr/bin/node-24 /home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs --root /tmp/everycall-stripe-acceptance-WKmhXf --url [URL redacted] --case final-matrix-5-4 --action cleanup --share-file /tmp/everycall-stripe-acceptance-WKmhXf/deployment-share-token\nnode:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: HTTP 422: {\"error\":\"provider_acceptance_failed\",\"providerType\":\"StripeInvalidRequestError\",\"requestId\":\"req_WNMzWmPl58sURo\"}\n    at request (file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:34:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/jonlehman/code/everycall_system/scripts/run-stripe-sandbox-acceptance.mjs:48:14 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.18.0\n"
+  },
+  {
+    "complete": true,
+    "passed": 36,
+    "failed": 9,
+    "total": 36
+  }
+]

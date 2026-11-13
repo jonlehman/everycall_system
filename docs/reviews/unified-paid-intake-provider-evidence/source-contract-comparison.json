@@ -1,0 +1,2849 @@
+{
+  "offlineOnly": true,
+  "sourceFreshnessChecked": false,
+  "sourceSnapshotConsistent": true,
+  "sourceCaptures": [
+    {
+      "file": "subscription-create-36.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    },
+    {
+      "file": "schedule-update-36.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    },
+    {
+      "file": "schedule-update-included.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    },
+    {
+      "file": "schedule-update-reschedule.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    },
+    {
+      "file": "checkout-create.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    },
+    {
+      "file": "customer-default-initialization.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    },
+    {
+      "file": "usage-invoice-create-item-finalize.json",
+      "sourceSha256": {
+        "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+        "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+        "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+        "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+        "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+        "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+        "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+        "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+        "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+      }
+    }
+  ],
+  "sourceHashVariants": {
+    "paidIntake.js": [
+      "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4"
+    ],
+    "paidReinstatement.js": [
+      "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e"
+    ],
+    "paidPurchaseContract.js": [
+      "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4"
+    ],
+    "paidPurchaseEvents.js": [
+      "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d"
+    ],
+    "paidBillingChanges.js": [
+      "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e"
+    ],
+    "paidBaseInvoice.js": [
+      "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263"
+    ],
+    "paidUsageInvoices.js": [
+      "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb"
+    ],
+    "callBilling.js": [
+      "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1"
+    ],
+    "lib/paidBillingCalendar.js": [
+      "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+    ]
+  },
+  "scheduleDelta": {
+    "compared": 36,
+    "allOtherFinancialFieldsIdentical": true,
+    "changes": [
+      {
+        "pair": "starter:month:starter:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_0",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:month:starter:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_1",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:month:growth:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_2",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:month:growth:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_3",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:month:pro:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_4",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:month:pro:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_5",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:year:starter:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_6",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:year:starter:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_7",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:year:growth:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_8",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:year:growth:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_9",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:year:pro:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_10",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "starter:year:pro:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_11",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:month:starter:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_12",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:month:starter:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_13",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:month:growth:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_14",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:month:growth:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_15",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:month:pro:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_16",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:month:pro:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_17",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:year:starter:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_18",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:year:starter:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_19",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:year:growth:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_20",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:year:growth:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_21",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:year:pro:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_22",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "growth:year:pro:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_23",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:month:starter:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_24",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:month:starter:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_25",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:month:growth:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_26",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:month:growth:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_27",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:month:pro:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_28",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:month:pro:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_29",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:year:starter:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_30",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:year:starter:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_31",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:year:growth:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_32",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:year:growth:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_33",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:year:pro:month",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_34",
+            "after": null
+          }
+        ]
+      },
+      {
+        "pair": "pro:year:pro:year",
+        "differences": [
+          {
+            "path": "$.default_settings.default_payment_method",
+            "before": null,
+            "after": ""
+          },
+          {
+            "path": "$.phases.0.default_payment_method",
+            "before": "pm_sub_bridge_35",
+            "after": null
+          }
+        ]
+      }
+    ]
+  },
+  "providerApiVersion": "2026-02-25.clover",
+  "probeSha256": "938c76b0888c521b271fd2b6ee48a02e918ed0d07b7d3d8fe233f98b9b90a361",
+  "sourceSha256": {
+    "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+    "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+    "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+    "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+    "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+    "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+    "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+    "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+    "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+  },
+  "compared": 83,
+  "match": true,
+  "normalization": "Only metadata objects are excluded from financial comparison. The probe uses synthetic run ownership; source purchase/operation ownership is validated by native application tests. Checkout client-reference IDs are normalized only after verifying their purchase metadata binding; only callback origins are normalized (paths and queries remain exact). Usage invoice/item/finalize calls normalize synthetic ownership metadata and only the synthetic adjective in the line description; financial amounts, payment-method selection, invoice binding and call order remain exact. The native usage fixture separately proves frozen historical rating despite the current plan rate. All other IDs, UTC timestamps, inherited current-phase fields, amounts, periods, consent-independent payment settings and billing flags are compared exactly.",
+  "requests": [
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "c7ed9446b6e196ceb4d397a5386b22f2e93f8a296aff75a673f8b3d2008d643f",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "481591eff3bcf994d63c09e25f71b43e1c82a1195ca9149e6ba1d214de9843af"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "0e9c765cac3e4878cce6da7b07fbfe4974fd27cceb710005aabb037e3a210759",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ad96e809abcfe1edb8d5a5916c467d58333c5d746fa4d2b76b568f1b0dcb7b46"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "1b251e0b02f579d4543c9d125574e268af7803af441044cbd499e926ecd665b3",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "0ec06e601fb231f2ffd2ad4d87685c1b126fc46e8b7c6b4c94d4579ce7c28467"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "31019fdaa6431c1ed48c54dc9adde23d17b958db49fcd3465575b59d5c6c2459",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "910cd69c1c81f9d48c9692e45a9fa5d7c56d54553058b45dc9f73d7acb7d1f02"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "b7d2def44361f646b0e36fd10e36041b909c5fda162feffa13be62e1f13eef8a",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "c2129ae36d1e82236351cf4544f04975ea37c41192035c3f2248646ba8786bc3"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "b93344161eaad97525dd123d3998f66ea7f3b9ed63cb92f1ee67e7f834c22fe9",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "caa0b4b4e89ead94b1212231d7f817fc63495af0496f8b7cb3b9db7d3ab7d903"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "a3f5a3f2e1b5e0b4febcfc9b5e971090577949aac7016f2e896a0e0730c21af5",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "8119094e7320340d56e8943406ec0b2ba93a3fcfd0da4993e3cad154b29ae594"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "864016f679776cdd06759adc61eaeb90eb1a068dfef1e0d83f0b82eb72ae6942",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "21867c7f17cdd2f45b4067dfdf7d499811c379de3df6622e56c086433308d594"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "year",
+      "purchaseKind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "6b39922765866d1c0784f660caf60833e2d97e31e4769dc2486ab0035edf0e66",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "817177178d7ffaf3ef742d64c888e449d8bd8a09619067fb1d8c7b7ecca0bf3c"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "083cce7d2ed9f7299c65b493fcd717fbabc5241d57ee0c9afdbe78c31de5c268",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "2d6434728cbd8afba6da5c085ae78aa136628a78fd51259eed8b9be6d9ab35a7"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "1c8f3444ca24f19d39951b97860b2e431fc0dda76a0578707f33c14e2b442dec",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "d36f743a81cc77c366e481fbffee302024bdf61ab0d60f6b4e964578461d4e9b"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "452fa245313cb3bc140d68f801d8a118b43c9aa9f443cbb53e86b4e4f47333c7",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "7cb818c801dd41ea2ded5182d007589b61306e96317795f2f0b395e9e753ff5a"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "664266116a751eda25818e631c26f06733a442f937e49e2f1422c3ba36b6e307",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "1cdf835170ba2f91a56282b219ec010699e17dac967fc4d2c1edd36017fa7423"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "e25df2524036eec3e9edbb6e48f154a66687bc414c20acbf1f4a37e843d72e17",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "c3a516c2b420234512459c560a17e07d98f674957270d9338ff548c65cc0a86a"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "c8cbb7cf3ae576fbfcacd300246c56861726a53fe3b2da7d12b557153fa03e88",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ccaed521b08f5442c19bb456c428ddfe32e5e66495eb1fa2476acf765192d136"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "f41f18b08db5af3bab5ce95c3a083317e69528398bcf43823da7846126f85f2b",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "57c2068c1582fa2db7a505b048357cbca01bebbe94d2302b6d0f49f700bd26c7"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "5e39b37430c4daf81a2cb2438bde4ea54d197a26356152a3439252bbaf57a760",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "fe2782a9ba15a3c8cfc277a6bb0da96da554510ff54bcb27fec13a6d0b4e4d17"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "5565dd63e12192ec25e08e9cab97d59a888109fc9f10bc294212e2685ea545a0",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "5ec4e1cdb01590fe8e8a106ec006fef85fd66973daa599713af73944a965560a"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "financialRequestSha256": "87d76fc7096e302419709362014c32324b641509257a5a8963d419e1473a3cf5",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "c4faec4aa7264d8e111cbaa39db5eb983ccbd5517551fb793b356de31eb9d5e0"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "4c0ae718d15e3aaf41d643d5f38a04daa65d42abc04d502a608389b1480381b7",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ff40738fee57cfac1733cf4b3a456459b3cfbf90b7f7579948af5ac4f42e043d"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "b8f3787e3abe9bfbb3e79347db37d360707e414169a6b81e03335c1566dd57b6",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "92c95b4dd40a8c79ead602b931aa0649253504ea6f138ffef17b63108f35bb8b"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "0dcbce113f85a163deefe9ee343557e783a4ba4830a86fb3d448da7f3fb5e802",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "f98dad93f9af7197cb5715b88365126541446c5902ee90c054332c4eb78234ba"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "23e8e3cfa2a7e812be34497c18a278768ef4d83fcd7b12396e5137a24e8c6dc3",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "2b0f82dbc9b0c106f9b5aa43ca8470c655298f230938a2351c0b569bd78084ad"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "cf020153efc590ae0963c0f2b339d63c60773317cd6ae2523f627eb2578e8258",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "f2c46ade1baa5550ef542421651e702285175d3d34e7221a924138f6ce8a7980"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "1e02137d7bb9aa6599c04f51fa2857aa5a5427a1360edcf41699bd42ff631dc3",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "4534a8e8638f0e5cdb3cba41cedf3ff2b8ce6f7fe37dbe8287178f5f0d77577a"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "a28507c57a41eab2f7cfe47d4cf5ff29043388a52156d828e55cfee117643bcb",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "a662706190f07d900b48542b9fe922d4ed55a4341e092367dc56e7bd2de689ae"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "financialRequestSha256": "87b5fbb7242c3aa15e77b0c1de8b583547bb237d6d943a2cfdb6161a16c27a6d",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "2b54bf5019126d7ce391c541e70bbec9f1948491591f230835b5c08854bb3e33"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "b74b6930f7835a80fa592035e97d2fa3a2927d30d89c9153b10e427e0503d3f0",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ad42dfa86db8870dac6adfaa6dce9d4b921b49a8beb730c9adac9eeb3b472817"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "e8ebe29646e84d7bf15ff48985410e5485ede4cd351e504afe3903ade07bdf26",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "d46fa2836f31e24908b7f4aa20dc0931c47fb2379e868f4cde3ce91b1c68e494"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "starter",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "67668554181d814f4c0153c4b515444c791adaf6374eaa442404f1ebb353fb3e",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "6363624c2484a86e8bf5fc201901e480166a0f157413d27265e09b55cedd836b"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "c76d79a2d5dc2a51be144f923261505a89fe463a345ee310ad7ecee00cb3c85c",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "391f58dfd922de652fc5da484b0c515bfafb43b2d322e84972d2565ef5c1c622"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "4632e4f3a1218fb69fff9622f399b850ed123d1d07b2e0b0693aa017ad38db31",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "9d22ce97b3adc96ce56f7e87ccdaa04314220cfa719bff3286b6fdb36c338ab2"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "growth",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "8d114e336fcc72b1583cc46669b8946b64aa84d18a190c017b281f7dad9da549",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "372b4d6242ceeb89de2b89daeb8eec91ff6e5d3c55897408435096a7196ed3c4"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "month",
+      "purchaseKind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "480913630cc2591d1c5338cbb507a67d80faa615c29409145c989a3dacbe7c18",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "b523e0192df22339d9ab9e36a49b1d06d48a7c1cbc7905ae821aad45f2fad441"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "month",
+      "purchaseKind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "0a29d547ac8319e390536268a53b565285e865ce063247c405acbf7068efff1c",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "f2d265fa41d0694fef2cbb45a8a5ac821ddd55011a8698c9865eaadba6f599cd"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "subscription",
+      "plan": "pro",
+      "interval": "year",
+      "purchaseKind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "financialRequestSha256": "07165372f9273309a322d3cf32bf9f34931b06104561808a1d2a074fec30b32e",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "5c022f2254c369e041175435c98baf79188e0824b8edfd81bbadb6db8342334b"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "a68559eee9fd2dc21547532b1b37c2581fcda2cee70d182c316df9d07c15a445",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "28516a322afc77aa027fdb1ada347f7752fb4ebe8607a584b7c16ca043a455ea"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "7e4fb5325d5978d110bbfff701b8d244cea813462f099eed5151c7bfa52be034",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "90931f6fe9ff21cab3971a12f2ccb6754354c555d176a44d6f29d51acf178944"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "e6f3bbd13f118cd557a54f5074d48297a2ce69403c5f2f2e6c59fec264e9a916",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "3fcf133874f1473868845e440f9c0daa822f0856dc4764d2337c7349d6a56493"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "3f9be240c8b1f6f34a075caa77a2fb38bc11c770751c73cd84da0259dbbcacfb",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "54bbdcfcae5e1e31488627b71084d5ae1746256d6d936c3878aa010610105402"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "a76c1a73372b1fd73479b657730727eabdf9c94b3e989976f506cdd67d19fe70",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "b89acccc084e5135729781b51ff09f51ded075007f7dc2caa25ce48e5ff1238f"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "7aebcd3e1ee5f00bf47d5302fa19c39adee2b0589922ff80f089ea30752f6355",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "6b1011b86bc21fcfc1af8fe66945b674c4630ae799fa209f35812edef60ffac3"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "cb5babd34b41158268876e734ac23c945e18ce48d9e21442cedc055d3cbc089d",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "e615bc9bf9f146b760d8de9429658417a2d4a71bf90f5e083b7654e943701e92"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "9b730447435af09497dfed80af69d27585b0c669badd6d41960f561e133679df"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "ead1a9b188145ed7c112f15ccbcdf6ca418a07b863708c9c75114108ec86050a",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "90ac64141d146686bbf38e6e44e63c133496f20836aeb122d9c2ef9e71c829e9"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "de56c2ee3ccd3019d4ec0e69464674085e62d529b6811cc504e810f3b08c9337",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "061aca88a23fcdb2f26f143c5342159968ea6a1d3dd8fc89692af48e1736951d"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "be8214bdceb731aa70e67d238ac88cb3943045e055ea8626e5e8b4d8772e6d99"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "ac9de2443f0068106445bbcc3448b52a652865254773f98b0309013b4ee4bac6",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "66797eadbe9ecd0770ddac53daa70444d45dd0fcfbc5a42f1a2285217ba79e93"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "957bb4f964cc1f8ce860b1ec5413a3300cb74c5ff873249d11ba79058fbe3c13",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "18a29abc4cb958ae5a490ba10d83de511aa0ff5764b4d8e8dd28233ce47967c4"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "f156144a86f705dab17f5fcbdad524eafa721755e196948dc38278e6ac65bf9a"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "9d07850952056c381ec7ac5ab438f930fe73aa3ae7238c90915b5df6c8b0bac3",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "66c28102486137db40a1d675062e0ce829a1d02664f184e88b6ea3ef8c9799bd"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "98d3017616c6c0bb0fad2a62711c4c8a3b4fd110b24987dfe37797fada99393a",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "8e6bf7de7fce859039244157ca356af97ddd70b5fae7459af51d837e452c11d2"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "2c5e1b41995daea0bb35450e8e3508cc0a2fba62b83ad0e6b88c21f5b3987025",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "dd913c92f981e2b21d417d6f08be53cf96daf2563a0d4bcf40b74179c1580a38"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "e56d780bb05f4500ba49c6f9ee604b1c1cbd4495f858217faaf2f027b4452512",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "03ee71ee6f350da4b68a8f9579d6a8fbc22014097d8623966d1b0f02ea034c70"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "eac5a26f17300b1bb779b9811808e55a18a8ea5e55955470b01fb6c270cb904a",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "d6a54cc6d73177b81ba99bb6b10af0b240f7f2cb7eeb4062e724f8c167f03936"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "dfa5aed7d0027912f61a7b0c29fa3e23431e74e0693f0f26e65fdfb6ce0e3e03",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "c0e4878f29ce42d8e15fd959b1a563928bb7e3e1543602e064912edb3e527411"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "f347983b4faf839da88528c49ebf85fc1016b47b0855a4a5b0152b1c6773a173",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "5d065a7710b6912c2885fb2bae89a829beca3f6c03293d07381050a5e870a2f3"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "a8f96e2d6ed112db38e3fbd701f83279623ccc5d534f7cc38ddbdaabf94cf749",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "6bb1d6deab50ebc33717273656b1a6c2bcf4b96a368754964fd65a3a4d8018db"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "eb2c0368838d9f0c42d1c5ea452effec8e9cfdb6e7a55c8183fffcd449505fef"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "1edcc8c6e2c557930754f0811dd549ff95cf366e2b90226d9b9419fc974f54cc",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "00bc19ffeb438dcadb39f728927e48375280fcb9712f7245ba933381ce323a9b"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "c07e851b9f9cd8d2e6848f9077649fd5db21b1033d976f9ddd29d02388b8a797",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "db483a548ee3d552517f2ab50e4573e07a67cc292457f658d719e083c7bee148"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "a45e6616b026d1cda462bd1788f0ff37ac3e0d9f0d1a36d03bd78ceaec35ef0e"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "a6a6581c930e2cb853b5e39b5128a46dcad674736a65c53ff87b75cf7e1f1b7d",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "15d781f1cf6a7888cdf91b12614a7be40cd5f4535a828202f32d8d2dfb3612a8"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "889caf6f3fa2e08e1086f3d1bc404cb3692f18516eac17c693bcdf1d7454e7bc",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "50720add9c257a14f468407cea98bec0b70ba4f01f80167c9deda94801797bd6"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "3e3e922896db79af89f4553ab31f0ed592119e2b63b1ddc4435d63afa7417d72"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "dfbf257a4b70c551f6e0bde045d86ff7778e394aac77d831d1b0367a33f868d6",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "9288330304bb1367f349cb03dfd61fb9c8a43ce2a4bca2107195ccdefa73f9f6"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "33a803ec302169af0b1fde90ebdf7ceac275abee99d2b9035ffd23784815ca30",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "f4dfb9b68c149124959d563d467cd96a929eafa8a36ce20e7d6b7f8db3847cfa"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "5aeff36ad53b6975bd745fad80a62ead79c7a568bc79e52f26beafe2cb649a3d",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "a7b88d6c9ed0d745ce8d4b6c39964a54d3f734423d59a735e63f7c130616ade3"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "04cb1f61bf587f95ee6f0e7535a5614a1681212737b97238b27b37b2b08e1dc8",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "cbd1b86b17cbcc1a438f69a276236ce57a73cbd268864fc5011ec831d7eca62c"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "d7733d2ce511f12e06404d423f471b24a9c567e4e955d83479cbd32ccbce5d6b",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "105beeb3240cf481ef156aab17db9e52a4ad40ff8dc5d65814f630557501c249"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "5d6fcdb8c5e1bdc1a9b9a7de0439188b8c80c43dd30519db4f436c0a373fb31b",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "c072c71f5954b26b35277459b7cab0b253d838b63bf677e714ef51f9340057b0"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "d4de7cf16243024f5a3c13617429bab3b56196252946145a841f8ade5e56551b",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "fae698ba8731b1b75dd6ae067ed0f01b5a56f65cfa20ad4d8a63bfea2454a38c"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "c228b227c7fa25b017841d71a77a5a1327ebce65097a9a1b11a8fa41d969427b",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "c90e9c1b2029ab5ca0ef1832bed58c6116f7422661c1becf1e91d40c281d57d9"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "4a29deb60a572dbd077996a8c932f21d5f3bd6d17983e2955f281fd02647dad2"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "297fc9139e4995d7f8527e90207ccabcb323e794409d7ceb67b985cff58aa71d",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "8d0995d85eb60c9210546e4a6b21d0c9a674390875f2bcc901f4377100c8f78f"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "9ae41d6cf197df9cafb9e1bca6a5385eeaa22b6089113072efa2fac6a4233b21",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "e542411f8acc6ed150225f1073e80ab6e7184e4410ccbc3b2b5383f3c9649d2b"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "c0de8991122c68d4df5ff6a95f3930ec572d03276be59ef5ef5ee60666a718d1"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "1f3ecf25979f10acd782882d45be1508c923e6659bfd1d9d216d4f53f511aff2",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "da686a3d0333738b3c70369e93e29818304b8bc38980e1eedab936182a48b456"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "96f5d94f27b63bdcbc3ca40c9587bdefac339fcb6c74b52af7e1fcb12c97082d",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "c17bf30c87804a1ae5ae96f947afce79745d45e17d59a2e10f8c14927bbaf201"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "afba2927d479521b59473bd2194d9245d8d16b848ed236f763ae6c431060107e"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "17347398743148a74e80ec087184ca6cdf347e0271c17f2c8e05f7e1aff65b75",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "5e002034a098271cc41f4e42689a9d978f404b1346e0146ac0a10042d5904194"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "schedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2028-01-31T12:00:00Z",
+      "financialRequestSha256": "be3416506330e308cca2d033bdcd9de80e4b2c1bb6e42fda4b10e2c666881249",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "fa0c6563b435432a80448df48b9d41ea10a1b2e8d862c2ce71f7f2c3ae5c1d01"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "036717eacef723ae8d0cd81da69075f26f5355caa6e8fad401a4a5668722bbc2"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+          "path": "$.phases[1].add_invoice_items[0].metadata",
+          "sha256": "b9237a91f678ba94d80beeb16effd381de16da398bef3d31a99891ec644a52a1"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "reschedule",
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "financialRequestSha256": "f1821569a4ffe57500fdd02a72c250b3c679d00ad590e8408e5ea3cad4013331",
+      "sourceMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "9b730447435af09497dfed80af69d27585b0c669badd6d41960f561e133679df"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "5dbe42942042054558b5ab690ecd6ec986a8a046d00e44f8f222b54d3b5ca834"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.phases[0].metadata",
+          "sha256": "9b730447435af09497dfed80af69d27585b0c669badd6d41960f561e133679df"
+        },
+        {
+          "path": "$.phases[1].metadata",
+          "sha256": "ba4941a7186cf13c6c22751eba0ce775ea2b14ad090f892b92fe3036af7cccbd"
+        }
+      ]
+    },
+    {
+      "kind": "checkout",
+      "purchaseKind": "setup",
+      "financialRequestSha256": "2e4df34761e9dfb7945f0d8b84caa1a2ee62d479e81f9feac77496153c0a6c75",
+      "sourceMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "4fadf85ef8dbfc33177e181ae3bbe1a7edd9934fc003442a628d6ce3d73da480"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "4fadf85ef8dbfc33177e181ae3bbe1a7edd9934fc003442a628d6ce3d73da480"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "4fadf85ef8dbfc33177e181ae3bbe1a7edd9934fc003442a628d6ce3d73da480"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "78de3d55adc7ebed8446adaa96a58f4d7dd42ca6f6c9c424873139ba28790ad3"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "78de3d55adc7ebed8446adaa96a58f4d7dd42ca6f6c9c424873139ba28790ad3"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "78de3d55adc7ebed8446adaa96a58f4d7dd42ca6f6c9c424873139ba28790ad3"
+        }
+      ]
+    },
+    {
+      "kind": "checkout",
+      "purchaseKind": "setup",
+      "financialRequestSha256": "5aeeb3ab78fffa54392c1d182b5e9235df29606600e56668895af422298f27ed",
+      "sourceMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "a6451c03593612215acbde2275075d72e1349c28564db5f5c4f6203b62a18bee"
+        },
+        {
+          "path": "$.setup_intent_data.metadata",
+          "sha256": "a6451c03593612215acbde2275075d72e1349c28564db5f5c4f6203b62a18bee"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.metadata",
+          "sha256": "2812e6fd916589c328d97654c02182deaa1d3ff35f087d2a1d2385486c07d57c"
+        },
+        {
+          "path": "$.setup_intent_data.metadata",
+          "sha256": "2812e6fd916589c328d97654c02182deaa1d3ff35f087d2a1d2385486c07d57c"
+        }
+      ]
+    },
+    {
+      "kind": "checkout",
+      "purchaseKind": "restart",
+      "financialRequestSha256": "7168679e8a4a9bf4bef7a346550e5653802cf5b133ceda77baea96b9e535484a",
+      "sourceMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "d4ddd50c8e82e701f15ef790938b68f7078d72e75bc86eaa7117b7f43df82f4b"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "d4ddd50c8e82e701f15ef790938b68f7078d72e75bc86eaa7117b7f43df82f4b"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "d4ddd50c8e82e701f15ef790938b68f7078d72e75bc86eaa7117b7f43df82f4b"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "1c090b5582f6da74c36cca72dd670ddd8bbe63c8c4b3a18f241fb289fa69a7ba"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "1c090b5582f6da74c36cca72dd670ddd8bbe63c8c4b3a18f241fb289fa69a7ba"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "1c090b5582f6da74c36cca72dd670ddd8bbe63c8c4b3a18f241fb289fa69a7ba"
+        }
+      ]
+    },
+    {
+      "kind": "checkout",
+      "purchaseKind": "restart",
+      "financialRequestSha256": "55158827407c7a966e2b9e197590a04258f5596265f6c18577ec1e79569f0655",
+      "sourceMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "f22883d775054142af68cd2f1b581565a0e1a963eaed30a53ec6bd2ba4b07f78"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "f22883d775054142af68cd2f1b581565a0e1a963eaed30a53ec6bd2ba4b07f78"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "f22883d775054142af68cd2f1b581565a0e1a963eaed30a53ec6bd2ba4b07f78"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "5a682e261fa37cd1fff95f53ddef6914004b1a0a512e2be2b00aeab39a3d8357"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "5a682e261fa37cd1fff95f53ddef6914004b1a0a512e2be2b00aeab39a3d8357"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "5a682e261fa37cd1fff95f53ddef6914004b1a0a512e2be2b00aeab39a3d8357"
+        }
+      ]
+    },
+    {
+      "kind": "checkout",
+      "purchaseKind": "setup",
+      "financialRequestSha256": "a5f32faa15516a7f891069f30120a5283693b8fe22455e83d4035e977b99add5",
+      "sourceMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "4c13fa607a169e08e912ebfbd558ff86a9e88e98db7b6ba4097129f93d20f166"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "4c13fa607a169e08e912ebfbd558ff86a9e88e98db7b6ba4097129f93d20f166"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "4c13fa607a169e08e912ebfbd558ff86a9e88e98db7b6ba4097129f93d20f166"
+        }
+      ],
+      "probeMetadata": [
+        {
+          "path": "$.invoice_creation.invoice_data.metadata",
+          "sha256": "78de3d55adc7ebed8446adaa96a58f4d7dd42ca6f6c9c424873139ba28790ad3"
+        },
+        {
+          "path": "$.metadata",
+          "sha256": "78de3d55adc7ebed8446adaa96a58f4d7dd42ca6f6c9c424873139ba28790ad3"
+        },
+        {
+          "path": "$.payment_intent_data.metadata",
+          "sha256": "78de3d55adc7ebed8446adaa96a58f4d7dd42ca6f6c9c424873139ba28790ad3"
+        }
+      ]
+    },
+    {
+      "kind": "customer_default",
+      "sourceCustomer": "cus_dedicated",
+      "sourceIdempotencyOptions": {
+        "idempotencyKey": "dedicated:customer-default"
+      },
+      "probeIdempotencyOptions": {
+        "idempotencyKey": "offline_contract_capture:financial_request:customer-method"
+      },
+      "idempotencyComparison": "Distinct synthetic run/purchase namespaces; literal source frozen key retained, not equated to probe fixture key.",
+      "financialRequestSha256": "faa323618c990ddfb0074535f50bc70e174f0fe7b0cd53577af42f436e8f4229",
+      "sourceMetadata": [],
+      "probeMetadata": []
+    },
+    {
+      "kind": "customer_default",
+      "sourceCustomer": "cus_later_owner",
+      "sourceIdempotencyOptions": {
+        "idempotencyKey": "later_owner:customer-default"
+      },
+      "probeIdempotencyOptions": {
+        "idempotencyKey": "offline_contract_capture:financial_request:customer-method"
+      },
+      "idempotencyComparison": "Distinct synthetic run/purchase namespaces; literal source frozen key retained, not equated to probe fixture key.",
+      "financialRequestSha256": "fb32da6339572c5fdc9cf0a770a0d00ca02908fc500e45881c5736cb06fe482d",
+      "sourceMetadata": [],
+      "probeMetadata": []
+    },
+    {
+      "kind": "usage",
+      "methodSource": "subscription",
+      "financialRequestSha256": "9bfba8e6b562f20576e582ace64a4b25581873ce5a97a875a6426c12a9873d65",
+      "frozenHistoricalAmount": 900,
+      "nativeCurrentRate": 175,
+      "periodStart": "2028-02-29T00:00:00.000Z",
+      "periodEnd": "2028-03-31T00:00:00.000Z",
+      "sourceIdempotencyOptions": [
+        {
+          "idempotencyKey": "paid-usage-1-invoice"
+        },
+        {
+          "idempotencyKey": "paid-usage-1-item"
+        },
+        {
+          "idempotencyKey": "paid-usage-1-finalize"
+        }
+      ],
+      "probeIdempotencyOptions": [
+        {
+          "idempotencyKey": "offline_contract_capture:financial_usage_subscription:usage-0"
+        },
+        {
+          "idempotencyKey": "offline_contract_capture:financial_usage_subscription:usage-item-0"
+        },
+        {
+          "idempotencyKey": "offline_contract_capture:financial_usage_subscription:usage-finalize-0"
+        }
+      ],
+      "scope": "Exact invoice mechanism, PM selection, monetary payload and invoice binding. Fixed Starter probe fixture produces900; native source fixture independently proves historical900 despite current Pro175 rate. Probe current-price logic is not historical-rating proof. Only synthetic metadata, usage adjective and distinct test idempotency namespaces differ."
+    },
+    {
+      "kind": "usage",
+      "methodSource": "customer",
+      "financialRequestSha256": "feb58642ffb34bad6002aa47b8187256b907aa0eda959e02818591150d70a9d8",
+      "frozenHistoricalAmount": 900,
+      "nativeCurrentRate": 175,
+      "periodStart": "2028-02-29T00:00:00.000Z",
+      "periodEnd": "2028-03-31T00:00:00.000Z",
+      "sourceIdempotencyOptions": [
+        {
+          "idempotencyKey": "paid-usage-2-invoice"
+        },
+        {
+          "idempotencyKey": "paid-usage-2-item"
+        },
+        {
+          "idempotencyKey": "paid-usage-2-finalize"
+        }
+      ],
+      "probeIdempotencyOptions": [
+        {
+          "idempotencyKey": "offline_contract_capture:financial_usage_customer:usage-0"
+        },
+        {
+          "idempotencyKey": "offline_contract_capture:financial_usage_customer:usage-item-0"
+        },
+        {
+          "idempotencyKey": "offline_contract_capture:financial_usage_customer:usage-finalize-0"
+        }
+      ],
+      "scope": "Exact invoice mechanism, PM selection, monetary payload and invoice binding. Fixed Starter probe fixture produces900; native source fixture independently proves historical900 despite current Pro175 rate. Probe current-price logic is not historical-rating proof. Only synthetic metadata, usage adjective and distinct test idempotency namespaces differ."
+    }
+  ]
+}

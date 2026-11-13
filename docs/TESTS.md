@@ -2,6 +2,8 @@
 
 ## Unified paid intake and billing — implementation regressions
 
+`scripts/validate-paid-canonical-base-shape.mjs` consumes the preserved actual unexpanded Stripe invoice-list response, adapting only cloned mode flags for the production verifier. The real full first-cycle proration flag grants exact coverage through the invoice event and delayed-history helper; wrong reason, partial amount/window, foreign subscription, extra/negative lines and mismatched total grant nothing. An explicitly synthetic annual adaptation covers the same full-boundary predicate.
+
 `scripts/validate-paid-initial-coverage.mjs` proves delayed first binding recovers only complete contiguous canonical paid monthly/annual renewal history, preserving original anchors and recording receipts once. Gaps, debt, foreign/zero/prorated/pre-anchor lines, incomplete history and unsupported scheduled state refuse before binding/build/number effects. The actual provisioning worker moves known invalid history to visible review without reclaiming it, while provider outages retain bounded retry. Expired historical setup consent preserves its original amount/date and creates no new payment or subscription.
 
 `scripts/validate-paid-usage-contracts.mjs` captures the actual standalone usage collector's create/item/finalize requests for subscription-card and customer-default branches. It proves finalized previous-window 900-cent usage survives a current plan/rate change, each item binds the exact created invoice, and replay creates no duplicate. Optional request evidence includes usage, rating and calendar source hashes; compare it offline with the already accepted real provider invoices rather than recharging fixtures.

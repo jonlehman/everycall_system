@@ -1,0 +1,113 @@
+[
+  {
+    "name": "final-hosted-month",
+    "pass": true,
+    "checkout": {
+      "id": "cs_test_a03TRt0ifJbK8Fvnx72SaBgsD1fZ9YtbIDOs1DvC1CKKRDY3pbX5KxLTwR",
+      "status": "complete",
+      "paymentStatus": "paid",
+      "consent": {
+        "promotions": null,
+        "terms_of_service": "accepted"
+      },
+      "amount": 10000,
+      "paymentIntent": "pi_3UbFOt2HodUYhbMc1nWrfrLj"
+    },
+    "subscription": {
+      "id": "sub_1UbFP12HodUYhbMc4GKjIZOq",
+      "livemode": false,
+      "status": "trialing",
+      "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+      "start": "2026-11-13T08:00:07.000Z",
+      "end": "2026-12-13T07:59:59.000Z",
+      "anchor": {
+        "day_of_month": 13,
+        "hour": 7,
+        "minute": 59,
+        "month": null,
+        "second": 59
+      },
+      "billingCycleAnchor": "2026-12-13T07:59:59.000Z",
+      "schedule": null,
+      "defaultPaymentMethod": "pm_1UbFOs2HodUYhbMcFPDIfEBl",
+      "saveDefaultPaymentMethod": "on_subscription",
+      "cancelAtPeriodEnd": false,
+      "trialEnd": "2026-12-13T07:59:59.000Z"
+    },
+    "paidAt": "2026-11-13T07:59:59.000Z"
+  },
+  {
+    "name": "final-hosted-year",
+    "pass": true,
+    "checkout": {
+      "id": "cs_test_a0u8c3wWmwpmQZ69vW6OS7aFXEdOoJiWt4y9WwqoMsEkppqadnHmyoJj25",
+      "status": "complete",
+      "paymentStatus": "paid",
+      "consent": {
+        "promotions": null,
+        "terms_of_service": "accepted"
+      },
+      "amount": 10000,
+      "paymentIntent": "pi_3UbFPH2HodUYhbMc1eUsAFFF"
+    },
+    "subscription": {
+      "id": "sub_1UbFPP2HodUYhbMcwtGlklW9",
+      "livemode": false,
+      "status": "trialing",
+      "price": "price_1UbEU12HodUYhbMcsf8DNOj3",
+      "start": "2026-11-13T08:00:31.000Z",
+      "end": "2026-12-13T08:00:23.000Z",
+      "anchor": {
+        "day_of_month": 13,
+        "hour": 8,
+        "minute": 0,
+        "month": 12,
+        "second": 23
+      },
+      "billingCycleAnchor": "2026-12-13T08:00:23.000Z",
+      "schedule": null,
+      "defaultPaymentMethod": "pm_1UbFPG2HodUYhbMcWVwkRN3Q",
+      "saveDefaultPaymentMethod": "on_subscription",
+      "cancelAtPeriodEnd": false,
+      "trialEnd": "2026-12-13T08:00:23.000Z"
+    },
+    "paidAt": "2026-11-13T08:00:23.000Z"
+  },
+  {
+    "name": "final-hosted-restart-year",
+    "pass": true,
+    "checkout": {
+      "id": "cs_test_a0K4aL32vrO6NRz0qxAOBeORFzINvupa8Di0XU7CB770Cxmj6yFMgBkidJ",
+      "status": "complete",
+      "paymentStatus": "paid",
+      "consent": {
+        "promotions": null,
+        "terms_of_service": "accepted"
+      },
+      "amount": 75990,
+      "paymentIntent": "pi_3UbFPf2HodUYhbMc1fEnG26A"
+    },
+    "subscription": {
+      "id": "sub_1UbFPo2HodUYhbMcyn4xDISL",
+      "livemode": false,
+      "status": "trialing",
+      "price": "price_1UbEU12HodUYhbMcsf8DNOj3",
+      "start": "2026-11-13T08:00:56.000Z",
+      "end": "2027-11-13T08:00:47.000Z",
+      "anchor": {
+        "day_of_month": 13,
+        "hour": 8,
+        "minute": 0,
+        "month": 11,
+        "second": 47
+      },
+      "billingCycleAnchor": "2027-11-13T08:00:47.000Z",
+      "schedule": null,
+      "defaultPaymentMethod": "pm_1UbFPf2HodUYhbMcreKJ9gF2",
+      "saveDefaultPaymentMethod": "on_subscription",
+      "cancelAtPeriodEnd": false,
+      "trialEnd": "2027-11-13T08:00:47.000Z"
+    },
+    "paidAt": "2026-11-13T08:00:47.000Z"
+  }
+]

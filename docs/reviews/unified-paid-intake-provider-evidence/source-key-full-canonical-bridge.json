@@ -1,0 +1,144 @@
+{
+  "run": "upib_609dfdd83248380d",
+  "apiVersion": "2026-02-25.clover",
+  "scenario": "begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+  "paidAt": "2027-01-31T12:00:00.000Z",
+  "enrollmentVariant": "trial_anchor",
+  "timing": "same_second",
+  "invoice": {
+    "id": "in_1UbFeM2HodUYhbMcUNzsUppJ",
+    "livemode": false,
+    "status": "paid",
+    "total": 7450,
+    "amountPaid": 7450,
+    "amountDue": 7450,
+    "customer": "cus_VcUdjhttL1kPGk",
+    "subscription": "sub_1UbFdo2HodUYhbMc8c1tONLe",
+    "subscriptionParentType": "subscription_details",
+    "amountRemaining": 0,
+    "billingReason": "subscription_update",
+    "created": "2027-02-28T12:00:00.000Z",
+    "attemptCount": 1,
+    "nextPaymentAttempt": null
+  },
+  "bridge": {
+    "schedule": "sub_sched_1UbFdt2HodUYhbMcQ8Ihyyk0",
+    "livemode": false,
+    "customer": "cus_VcUdjhttL1kPGk",
+    "subscription": null,
+    "releasedSubscription": "sub_1UbFdo2HodUYhbMc8c1tONLe",
+    "start": 1803816000,
+    "end": 1806494400,
+    "trialEnd": 1806494400,
+    "metadata": {
+      "acceptance_run": "upib_609dfdd83248380d",
+      "acceptance_scenario": "begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+      "app": "everycall",
+      "billing_interval": "month",
+      "paid_billing_change_id": "acceptance_change_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+      "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+      "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+      "plan_code": "starter"
+    },
+    "items": [
+      {
+        "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+        "quantity": 1
+      }
+    ],
+    "added": [
+      {
+        "price": "price_1UbFdu2HodUYhbMc9p14MGfO",
+        "product": "prod_VcTQADJrdVjbpf",
+        "type": "one_time",
+        "recurring": null,
+        "unitAmount": 7450,
+        "currency": "usd",
+        "metadata": {},
+        "active": false,
+        "quantity": 1,
+        "metadataOnItem": {
+          "acceptance_run": "upib_609dfdd83248380d",
+          "acceptance_scenario": "begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+          "app": "everycall",
+          "item_type": "paid_base_bridge",
+          "paid_billing_change_id": "acceptance_change_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+          "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys"
+        }
+      }
+    ]
+  },
+  "lines": [
+    {
+      "id": "il_1VE68q2HodUYhbMcL8mJiGFn",
+      "amount": 7450,
+      "currency": "usd",
+      "description": "EveryCall disposable acceptance upib_609dfdd83248380d",
+      "period": {
+        "end": 1806494400,
+        "start": 1803816000
+      },
+      "quantity": 1,
+      "metadata": {
+        "acceptance_run": "upib_609dfdd83248380d",
+        "acceptance_scenario": "begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+        "app": "everycall",
+        "item_type": "paid_base_bridge",
+        "paid_billing_change_id": "acceptance_change_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+        "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys"
+      },
+      "parentType": "invoice_item_details",
+      "invoiceItemDetails": {
+        "invoice_item": "ii_1UbFeM2HodUYhbMcmrBXCDSS",
+        "proration": false,
+        "proration_details": {
+          "credited_items": null
+        },
+        "subscription": "sub_1UbFdo2HodUYhbMc8c1tONLe"
+      },
+      "subscriptionItemDetails": null,
+      "priceDetails": {
+        "price": "price_1UbFdu2HodUYhbMc9p14MGfO",
+        "product": "prod_VcTQADJrdVjbpf"
+      },
+      "price": "price_1UbFdu2HodUYhbMc9p14MGfO"
+    },
+    {
+      "id": "il_1VE68r2HodUYhbMcdHuuLvG1",
+      "amount": 0,
+      "currency": "usd",
+      "description": "Free trial for 1 \u00d7 EveryCall disposable acceptance upib_609dfdd83248380d",
+      "period": {
+        "end": 1806494400,
+        "start": 1803816000
+      },
+      "quantity": 1,
+      "metadata": {
+        "acceptance_run": "upib_609dfdd83248380d",
+        "acceptance_scenario": "begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+        "app": "everycall",
+        "billing_interval": "month",
+        "paid_billing_change_id": "acceptance_change_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+        "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+        "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-1-0-ordinary-decline-trial_anchor-anniversary_paid_bridge-subscription_save-included-clear_settings-source_keys",
+        "plan_code": "starter"
+      },
+      "parentType": "subscription_item_details",
+      "invoiceItemDetails": null,
+      "subscriptionItemDetails": {
+        "invoice_item": null,
+        "proration": false,
+        "proration_details": {
+          "credited_items": null
+        },
+        "subscription": "sub_1UbFdo2HodUYhbMc8c1tONLe",
+        "subscription_item": "si_VcUdBQNnDK8OnS"
+      },
+      "priceDetails": {
+        "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+        "product": "prod_VcTQADJrdVjbpf"
+      },
+      "price": "price_1UbEU12HodUYhbMcs5GQGUYA"
+    }
+  ]
+}

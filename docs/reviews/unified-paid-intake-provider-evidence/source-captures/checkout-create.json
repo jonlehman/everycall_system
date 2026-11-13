@@ -1,0 +1,336 @@
+{
+  "fixtureOnly": true,
+  "sourceSha256": {
+    "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+    "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+    "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+    "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+    "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+    "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+    "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+    "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+    "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+  },
+  "requests": [
+    {
+      "kind": "setup",
+      "plan_code": "growth",
+      "billing_interval": "month",
+      "amount_cents": 10000,
+      "setup_amount_cents": 10000,
+      "request": {
+        "mode": "payment",
+        "customer": "cus_10",
+        "metadata": {
+          "plan_code": "growth",
+          "terms_version": "UPIB-2026-11-12-v1",
+          "paid_intake_id": "intake_907e4e6a-4578-406b-809d-13b776d975dd",
+          "billing_interval": "month",
+          "paid_purchase_id": "purchase_296ef08f-d262-4f38-9eaf-35715bd4e982",
+          "paid_checkout_generation": "0"
+        },
+        "cancel_url": "https://fixture.everycall.invalid/intake?checkout=cancel",
+        "line_items": [
+          {
+            "quantity": 1,
+            "price_data": {
+              "currency": "usd",
+              "unit_amount": 10000,
+              "product_data": {
+                "name": "EveryCall setup — selected plan’s first month included"
+              }
+            }
+          }
+        ],
+        "custom_text": {
+          "submit": {
+            "message": "I authorize $124.50 every month, starting after the first calendar month included in setup. 60 calls each month; $2.00 per additional billable call, billed monthly. Cancellation takes effect at paid-term end."
+          }
+        },
+        "success_url": "https://fixture.everycall.invalid/intake?checkout=success",
+        "invoice_creation": {
+          "enabled": true,
+          "invoice_data": {
+            "metadata": {
+              "plan_code": "growth",
+              "terms_version": "UPIB-2026-11-12-v1",
+              "paid_intake_id": "intake_907e4e6a-4578-406b-809d-13b776d975dd",
+              "billing_interval": "month",
+              "paid_purchase_id": "purchase_296ef08f-d262-4f38-9eaf-35715bd4e982",
+              "paid_checkout_generation": "0"
+            }
+          }
+        },
+        "consent_collection": {
+          "terms_of_service": "required"
+        },
+        "client_reference_id": "purchase_296ef08f-d262-4f38-9eaf-35715bd4e982",
+        "payment_intent_data": {
+          "metadata": {
+            "plan_code": "growth",
+            "terms_version": "UPIB-2026-11-12-v1",
+            "paid_intake_id": "intake_907e4e6a-4578-406b-809d-13b776d975dd",
+            "billing_interval": "month",
+            "paid_purchase_id": "purchase_296ef08f-d262-4f38-9eaf-35715bd4e982",
+            "paid_checkout_generation": "0"
+          },
+          "setup_future_usage": "off_session"
+        },
+        "payment_method_types": [
+          "card"
+        ]
+      }
+    },
+    {
+      "kind": "setup",
+      "plan_code": "growth",
+      "billing_interval": "month",
+      "amount_cents": 0,
+      "setup_amount_cents": 100,
+      "request": {
+        "mode": "setup",
+        "currency": "usd",
+        "customer": "cus_7",
+        "metadata": {
+          "plan_code": "growth",
+          "terms_version": "UPIB-2026-11-12-v1",
+          "paid_intake_id": "intake_56476e2b-fe18-4fd3-8ff4-2299b2bd5600",
+          "billing_interval": "month",
+          "paid_purchase_id": "purchase_36bd530d-59ae-431d-9dcb-e5c9ec776ae3",
+          "paid_checkout_generation": "0"
+        },
+        "cancel_url": "https://fixture.everycall.invalid/intake?checkout=cancel",
+        "custom_text": {
+          "submit": {
+            "message": "I authorize $124.50 every month, starting after the first calendar month included in setup. 60 calls each month; $2.00 per additional billable call, billed monthly. Cancellation takes effect at paid-term end."
+          }
+        },
+        "success_url": "https://fixture.everycall.invalid/intake?checkout=success",
+        "setup_intent_data": {
+          "metadata": {
+            "plan_code": "growth",
+            "terms_version": "UPIB-2026-11-12-v1",
+            "paid_intake_id": "intake_56476e2b-fe18-4fd3-8ff4-2299b2bd5600",
+            "billing_interval": "month",
+            "paid_purchase_id": "purchase_36bd530d-59ae-431d-9dcb-e5c9ec776ae3",
+            "paid_checkout_generation": "0"
+          }
+        },
+        "consent_collection": {
+          "terms_of_service": "required"
+        },
+        "client_reference_id": "purchase_36bd530d-59ae-431d-9dcb-e5c9ec776ae3",
+        "payment_method_types": [
+          "card"
+        ]
+      }
+    },
+    {
+      "kind": "restart",
+      "plan_code": "pro",
+      "billing_interval": "year",
+      "amount_cents": 177990,
+      "setup_amount_cents": 0,
+      "request": {
+        "mode": "payment",
+        "customer": "cus_1",
+        "metadata": {
+          "plan_code": "pro",
+          "tenant_key": "paid_7c4dd11246544be48e624e28fa04c19d",
+          "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+          "billing_interval": "year",
+          "paid_purchase_id": "purchase_7e37a97e-b230-4e51-8d35-46b988660347",
+          "paid_checkout_generation": "0"
+        },
+        "cancel_url": "https://fixture.everycall.invalid/client/account/billing",
+        "line_items": [
+          {
+            "quantity": 1,
+            "price_data": {
+              "currency": "usd",
+              "unit_amount": 177990,
+              "product_data": {
+                "name": "EveryCall pro — full new year"
+              }
+            }
+          }
+        ],
+        "custom_text": {
+          "submit": {
+            "message": "I authorize $1779.90 every year, starting after the full period paid today. 100 calls each month; $1.75 per additional billable call, billed monthly. Cancellation takes effect at paid-term end. No setup fee or free month. A new phone number requires updated call forwarding."
+          }
+        },
+        "success_url": "https://fixture.everycall.invalid/client/account/billing?restart=processing",
+        "invoice_creation": {
+          "enabled": true,
+          "invoice_data": {
+            "metadata": {
+              "plan_code": "pro",
+              "tenant_key": "paid_7c4dd11246544be48e624e28fa04c19d",
+              "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+              "billing_interval": "year",
+              "paid_purchase_id": "purchase_7e37a97e-b230-4e51-8d35-46b988660347",
+              "paid_checkout_generation": "0"
+            }
+          }
+        },
+        "consent_collection": {
+          "terms_of_service": "required"
+        },
+        "client_reference_id": "purchase_7e37a97e-b230-4e51-8d35-46b988660347",
+        "payment_intent_data": {
+          "metadata": {
+            "plan_code": "pro",
+            "tenant_key": "paid_7c4dd11246544be48e624e28fa04c19d",
+            "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+            "billing_interval": "year",
+            "paid_purchase_id": "purchase_7e37a97e-b230-4e51-8d35-46b988660347",
+            "paid_checkout_generation": "0"
+          },
+          "setup_future_usage": "off_session"
+        },
+        "payment_method_types": [
+          "card"
+        ]
+      }
+    },
+    {
+      "kind": "restart",
+      "plan_code": "starter",
+      "billing_interval": "month",
+      "amount_cents": 7450,
+      "setup_amount_cents": 0,
+      "request": {
+        "mode": "payment",
+        "customer": "cus_1",
+        "metadata": {
+          "plan_code": "starter",
+          "tenant_key": "paid_7c4dd11246544be48e624e28fa04c19d",
+          "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+          "billing_interval": "month",
+          "paid_purchase_id": "purchase_e8e88cae-1029-46a9-bc9f-dc0788fe5c48",
+          "paid_checkout_generation": "0"
+        },
+        "cancel_url": "https://fixture.everycall.invalid/client/account/billing",
+        "line_items": [
+          {
+            "quantity": 1,
+            "price_data": {
+              "currency": "usd",
+              "unit_amount": 7450,
+              "product_data": {
+                "name": "EveryCall starter — full new month"
+              }
+            }
+          }
+        ],
+        "custom_text": {
+          "submit": {
+            "message": "I authorize $74.50 every month, starting after the full period paid today. 25 calls each month; $3.00 per additional billable call, billed monthly. Cancellation takes effect at paid-term end. No setup fee or free month. A new phone number requires updated call forwarding."
+          }
+        },
+        "success_url": "https://fixture.everycall.invalid/client/account/billing?restart=processing",
+        "invoice_creation": {
+          "enabled": true,
+          "invoice_data": {
+            "metadata": {
+              "plan_code": "starter",
+              "tenant_key": "paid_7c4dd11246544be48e624e28fa04c19d",
+              "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+              "billing_interval": "month",
+              "paid_purchase_id": "purchase_e8e88cae-1029-46a9-bc9f-dc0788fe5c48",
+              "paid_checkout_generation": "0"
+            }
+          }
+        },
+        "consent_collection": {
+          "terms_of_service": "required"
+        },
+        "client_reference_id": "purchase_e8e88cae-1029-46a9-bc9f-dc0788fe5c48",
+        "payment_intent_data": {
+          "metadata": {
+            "plan_code": "starter",
+            "tenant_key": "paid_7c4dd11246544be48e624e28fa04c19d",
+            "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+            "billing_interval": "month",
+            "paid_purchase_id": "purchase_e8e88cae-1029-46a9-bc9f-dc0788fe5c48",
+            "paid_checkout_generation": "0"
+          },
+          "setup_future_usage": "off_session"
+        },
+        "payment_method_types": [
+          "card"
+        ]
+      }
+    },
+    {
+      "kind": "setup",
+      "plan_code": "growth",
+      "billing_interval": "month",
+      "amount_cents": 10000,
+      "setup_amount_cents": 10000,
+      "request": {
+        "mode": "payment",
+        "customer": "cus_1",
+        "metadata": {
+          "plan_code": "growth",
+          "terms_version": "UPIB-2026-11-12-v1",
+          "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+          "billing_interval": "month",
+          "paid_purchase_id": "purchase_f89b273d-9b63-4232-a3a3-3feae69fa556",
+          "paid_checkout_generation": "0"
+        },
+        "cancel_url": "https://fixture.everycall.invalid/intake?checkout=cancel",
+        "line_items": [
+          {
+            "quantity": 1,
+            "price_data": {
+              "currency": "usd",
+              "unit_amount": 10000,
+              "product_data": {
+                "name": "EveryCall setup — selected plan’s first month included"
+              }
+            }
+          }
+        ],
+        "custom_text": {
+          "submit": {
+            "message": "I authorize $124.50 every month, starting after the first calendar month included in setup. 60 calls each month; $2.00 per additional billable call, billed monthly. Cancellation takes effect at paid-term end."
+          }
+        },
+        "success_url": "https://fixture.everycall.invalid/intake?checkout=success",
+        "invoice_creation": {
+          "enabled": true,
+          "invoice_data": {
+            "metadata": {
+              "plan_code": "growth",
+              "terms_version": "UPIB-2026-11-12-v1",
+              "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+              "billing_interval": "month",
+              "paid_purchase_id": "purchase_f89b273d-9b63-4232-a3a3-3feae69fa556",
+              "paid_checkout_generation": "0"
+            }
+          }
+        },
+        "consent_collection": {
+          "terms_of_service": "required"
+        },
+        "client_reference_id": "purchase_f89b273d-9b63-4232-a3a3-3feae69fa556",
+        "payment_intent_data": {
+          "metadata": {
+            "plan_code": "growth",
+            "terms_version": "UPIB-2026-11-12-v1",
+            "paid_intake_id": "intake_c743311a-04ff-420e-bebb-49eb3aaa48d5",
+            "billing_interval": "month",
+            "paid_purchase_id": "purchase_f89b273d-9b63-4232-a3a3-3feae69fa556",
+            "paid_checkout_generation": "0"
+          },
+          "setup_future_usage": "off_session"
+        },
+        "payment_method_types": [
+          "card"
+        ]
+      }
+    }
+  ]
+}

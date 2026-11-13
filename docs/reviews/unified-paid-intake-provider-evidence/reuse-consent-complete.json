@@ -1,0 +1,46 @@
+{
+  "run": "upib_609dfdd83248380d",
+  "apiVersion": "2026-02-25.clover",
+  "scenario": "checkout-2-none-leap-none-trial_anchor-customer_seed_and_save-source_keys-reuse_consent",
+  "paidAt": "2026-11-13T08:24:28.000Z",
+  "enrollmentVariant": "trial_anchor",
+  "timing": "same_second",
+  "priorPayment": {
+    "checkout": "cs_test_a0a8gaVOBSe9whkPxz6brPlMEIY9N24GmozTdee06KDCPRyUieZIMuzIKz",
+    "paymentIntent": "pi_3UbFma2HodUYhbMc02w99Osm",
+    "amount": 10000
+  },
+  "checkout": {
+    "id": "cs_test_c0drYX9xTj8ofJKHggnoghJ4P6n6sbf8TgMsbvotWWNojIVyBf45g2DkCS",
+    "mode": "setup",
+    "status": "complete",
+    "paymentStatus": "no_payment_required",
+    "consent": {
+      "promotions": null,
+      "terms_of_service": "accepted"
+    },
+    "amount": 0,
+    "setupIntent": "seti_1UbFo22HodUYhbMcKywvLpLz"
+  },
+  "subscription": {
+    "id": "sub_1UbFwx2HodUYhbMc8sp18XYa",
+    "livemode": false,
+    "status": "trialing",
+    "price": "price_1UbEU12HodUYhbMclYord78k",
+    "start": "2026-11-13T08:35:11.000Z",
+    "end": "2026-12-13T08:24:28.000Z",
+    "anchor": {
+      "day_of_month": 13,
+      "hour": 8,
+      "minute": 24,
+      "month": null,
+      "second": 28
+    },
+    "billingCycleAnchor": "2026-12-13T08:24:28.000Z",
+    "schedule": null,
+    "defaultPaymentMethod": "pm_1UbFti2HodUYhbMcGkLMqLec",
+    "saveDefaultPaymentMethod": "on_subscription",
+    "cancelAtPeriodEnd": false,
+    "trialEnd": "2026-12-13T08:24:28.000Z"
+  }
+}

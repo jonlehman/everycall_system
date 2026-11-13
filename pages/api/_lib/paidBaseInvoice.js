@@ -42,12 +42,16 @@ export async function paidBaseCoverageEnd(db,account,invoice,stripe){
   if(recurring){
    const sub=id(line.subscription||line.parent?.subscription_item_details?.subscription);
    if(sub&&sub!==account.stripe_subscription_id)continue;
-   if(line.proration===true||line.parent?.subscription_item_details?.proration===true)continue;
+   // Stripe can label a full original-calendar renewal as proration after deferral.
+   // Only a cycle invoice may use that representation; exact term/price checks follow.
+   const flagged=line.proration===true||line.parent?.subscription_item_details?.proration===true;
+   if(flagged&&(invoice.billing_reason!=='subscription_cycle'||lines.length!==1||sub!==account.stripe_subscription_id))continue;
    const plan=catalog.find(p=>priceId===(p.stripePriceId||p.stripe_price_id)||priceId===(p.stripeAnnualPriceId||p.stripe_annual_price_id));
    const standard=STANDARD_BILLING_PLANS.find(p=>p.code===plan?.code);if(!standard)continue;
    const annual=priceId===(plan.stripeAnnualPriceId||plan.stripe_annual_price_id);
    const window=monthlyUsageWindow(account.usage_anchor_at,new Date(start*1000));
    if(window.start.getTime()!==start*1000||calendarMonthBoundary(account.usage_anchor_at,window.index+(annual?12:1)).getTime()!==end*1000||Number(line.amount)!==(annual?standard.annualAmountCents:standard.monthlyAmountCents))continue;
+   if(flagged&&Number(invoice.total)!==(annual?standard.annualAmountCents:standard.monthlyAmountCents))continue;
    ends.push(end);continue;
   }
   if(parent!=='invoice_item_details'&&line.type!=='invoiceitem')continue;

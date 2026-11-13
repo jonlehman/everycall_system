@@ -1,0 +1,223 @@
+{
+  "knownUniqueCustomers": 126,
+  "allKnownCustomersHaveSuccessfulCleanupReceipt": true,
+  "unconfirmedCustomerCount": 0,
+  "allKnownClockAndHostedCustomersRemoved": true,
+  "catalogRetired": {
+    "run": "upib_609dfdd83248380d",
+    "apiVersion": "2026-02-25.clover",
+    "scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+    "paidAt": "2027-01-31T12:00:00.000Z",
+    "enrollmentVariant": "trial_anchor",
+    "timing": "same_second",
+    "catalogRetired": true
+  },
+  "supplementalCleanupReceipts": [
+    {
+      "name": "after-month",
+      "customer": "cus_VcTZdH3UJ5Fkfg",
+      "cleaned": true
+    },
+    {
+      "name": "checkout-month",
+      "customer": "cus_VcTeU7PW3dhoOq",
+      "cleaned": true
+    },
+    {
+      "name": "checkout-restart-year",
+      "customer": "cus_VcTxsbAm16miys",
+      "cleaned": true
+    },
+    {
+      "name": "checkout-year",
+      "customer": "cus_VcTx7PqBAfYHSV",
+      "cleaned": true
+    },
+    {
+      "name": "phase-candidate-annual-anniversary_automatic",
+      "customer": "cus_VcTxNVMGRQHpkD",
+      "cleaned": true
+    },
+    {
+      "name": "phase-candidate-annual-anniversary_phase_start",
+      "customer": "cus_VcTxMU1lJi4Kxw",
+      "cleaned": true
+    },
+    {
+      "name": "phase-candidate-annual",
+      "customer": "cus_VcTqbnONHT4sFe",
+      "cleaned": true
+    },
+    {
+      "name": "phase-candidate-clamped-month",
+      "customer": "cus_VcTqBuOV9Bjpwv",
+      "cleaned": true
+    },
+    {
+      "name": "recovery-decline",
+      "customer": "cus_VcTmUQHnTb9lVT",
+      "cleaned": true
+    },
+    {
+      "name": "recovery-sca",
+      "customer": "cus_VcTmQFUZV8q7mk",
+      "cleaned": true
+    },
+    {
+      "name": "trial-month",
+      "customer": "cus_VcTZJaVRcl6KdW",
+      "cleaned": true
+    },
+    {
+      "name": "trial-restart-year",
+      "customer": "cus_VcTcdU0q81wOXT",
+      "cleaned": true
+    },
+    {
+      "name": "bridge-included-cancel",
+      "customer": "cus_VcUIuoJ4NpKifG",
+      "cleaned": true
+    },
+    {
+      "name": "bridge-recovery-decline",
+      "customer": "cus_VcUOKiAo8YAz54",
+      "cleaned": true
+    },
+    {
+      "name": "bridge-recovery-sca",
+      "customer": "cus_VcUOCUIWJMyNQV",
+      "cleaned": true
+    },
+    {
+      "name": "bridge-reschedule",
+      "customer": "cus_VcUNOjE7S1RpWF",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-1-0",
+      "customer": "cus_VcUNKn0bSAP5fP",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-1-2",
+      "customer": "cus_VcUOTdih8AN9kc",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-1-4",
+      "customer": "cus_VcUOs17NePw4iq",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-3-0",
+      "customer": "cus_VcURP96od0JWh1",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-3-2",
+      "customer": "cus_VcUROad6l7dXaI",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-3-4",
+      "customer": "cus_VcUSKOOUSNoMRh",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-5-0",
+      "customer": "cus_VcUU6hbkXTxdLk",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-5-2",
+      "customer": "cus_VcUUgqR3l1VsUt",
+      "cleaned": true
+    },
+    {
+      "name": "final-matrix-5-4",
+      "customer": "cus_VcUVMZAxAZvYxQ",
+      "cleaned": true
+    },
+    {
+      "name": "method-inherit-decline",
+      "customer": "cus_VcUCc59772jxNY",
+      "cleaned": true
+    },
+    {
+      "name": "method-inherit-normal",
+      "customer": "cus_VcUCNhiqP6RF1h",
+      "cleaned": true
+    },
+    {
+      "name": "method-save-decline",
+      "customer": "cus_VcUI3IZ75UOjPQ",
+      "cleaned": true
+    },
+    {
+      "name": "method-save-normal",
+      "customer": "cus_VcUIeEvrliB6v2",
+      "cleaned": true
+    },
+    {
+      "name": "pending-schedule-card",
+      "customer": "cus_VcUU9AidNaK07Q",
+      "cleaned": true
+    },
+    {
+      "name": "phase-candidate-annual-anniversary_paid_bridge",
+      "customer": "cus_VcU9giSP8tp89y",
+      "cleaned": true
+    },
+    {
+      "name": "bridge-reschedule-omit",
+      "customer": "cus_VcUdIrGbejP5WU",
+      "cleaned": true
+    },
+    {
+      "name": "clear-schedule-pm-control",
+      "customer": "cus_VcUd4bRwYuVqTQ",
+      "cleaned": true
+    },
+    {
+      "name": "clear-schedule-pm-portal",
+      "customer": "cus_VcUdjhttL1kPGk",
+      "cleaned": true
+    },
+    {
+      "name": "final-bridge-card",
+      "customer": "cus_VcVBunjcsC1GK8",
+      "cleaned": true
+    },
+    {
+      "name": "reuse-consent-growth",
+      "customer": "cus_VcUlw3TJ7a8Uwn",
+      "cleaned": true
+    },
+    {
+      "name": "seed-schedule-hig",
+      "customer": "cus_VcUltt4Ck74gab",
+      "cleaned": true
+    },
+    {
+      "name": "seed-schedule-pm-control",
+      "customer": "cus_VcUlC2DAKRK2Bn",
+      "cleaned": true
+    },
+    {
+      "name": "seed-schedule-pm-portal",
+      "customer": "cus_VcUlcj2g9N2Rd2",
+      "cleaned": true
+    },
+    {
+      "name": "canonical-base-month",
+      "customer": "cus_VcVTAijN3G8nPG",
+      "cleaned": true
+    },
+    {
+      "name": "canonical-base-annual",
+      "customer": "cus_VcVXaFwVzhJJLt",
+      "cleaned": true
+    }
+  ],
+  "deploymentCleanup": "All15 known isolated probe deployments removed; final deployment share revoked; project canonical target, crons and SSO protection unchanged; automation bypass count0. Website candidate excluded."
+}

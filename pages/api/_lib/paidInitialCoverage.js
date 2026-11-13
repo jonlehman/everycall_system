@@ -18,7 +18,7 @@ export async function reconcilePaidInitialCoverage(row,stripe,{now=new Date()}={
   if(lines.every(l=>Number(l.amount)===0)&&Number(invoice.total)===0)continue;
   if(lines.length!==1||Number(invoice.total)!==expected)review();
   const line=lines[0],a=Number(line.period?.start),b=Number(line.period?.end),parent=line.parent?.subscription_item_details;
-  if(Number(line.amount)!==expected||line.currency!=='usd'||Number(line.quantity)!==1||(line.parent?.type!=='subscription_item_details'&&line.type!=='subscription')||id(line.price||line.pricing?.price_details?.price)!==row.stripe_price_id||(id(line.subscription||parent?.subscription)&&id(line.subscription||parent?.subscription)!==sub.id)||line.proration===true||parent?.proration===true||!Number.isSafeInteger(a)||!Number.isSafeInteger(b)||a<=0||b<=a)review();
+  if(Number(line.amount)!==expected||line.currency!=='usd'||Number(line.quantity)!==1||(line.parent?.type!=='subscription_item_details'&&line.type!=='subscription')||id(line.price||line.pricing?.price_details?.price)!==row.stripe_price_id||(id(line.subscription||parent?.subscription)&&id(line.subscription||parent?.subscription)!==sub.id)||((line.proration===true||parent?.proration===true)&&(invoice.billing_reason!=='subscription_cycle'||id(line.subscription||parent?.subscription)!==sub.id))||!Number.isSafeInteger(a)||!Number.isSafeInteger(b)||a<=0||b<=a)review();
   let window;try{window=monthlyUsageWindow(row.usage_anchor_at,new Date(a*1000));}catch{review();}
   if(window.start.getTime()!==a*1000||calendarMonthBoundary(row.usage_anchor_at,window.index+(row.billing_interval==='year'?12:1)).getTime()!==b*1000)review();
   const prior=seen.get(invoice.id);if(prior){if(prior.start!==a||prior.end!==b||prior.amount!==expected)review();continue;}

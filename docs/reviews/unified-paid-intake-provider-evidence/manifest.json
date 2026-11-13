@@ -1,0 +1,22 @@
+{
+  "syntheticOnly": true,
+  "runId": "upib_609dfdd83248380d",
+  "stripeAccount": "acct_1T8P942HodUYhbMc",
+  "apiVersion": "2026-02-25.clover",
+  "stripeSdk": "20.4.1",
+  "finalProbeSha256": "938c76b0888c521b271fd2b6ee48a02e918ed0d07b7d3d8fe233f98b9b90a361",
+  "financialMatrix": {
+    "pass": 36,
+    "helperSha256": "1228e0fddbc34c4ca2cb52938882de8c20a0ee52c2869c4ac4c7749366a509c0",
+    "predatesFinalPaymentInheritanceDelta": true
+  },
+  "finalPaymentInheritance": {
+    "portalIntervalPairsPass": 4,
+    "includedBridgeReschedulePortalPass": true,
+    "all36OldNewRequestDiffLimitedToReviewedPaymentFields": true
+  },
+  "annualMonthlyUsageInvoicesPaid": 39,
+  "offlineSourceRequestComparisons": 83,
+  "sourceFreshness": "Provider request bodies matched the baseline financial revision. The later canonical first-cycle response validation correction leaves outgoing requests unchanged. Final source hashes and clean HEAD must be verified after the combined reviewed commit.",
+  "providerRequestBodyBaselineRevision": "6a1ea89ccdb0bb36d19b19e7518ae190136fe169"
+}

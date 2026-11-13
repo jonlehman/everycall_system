@@ -1,0 +1,23 @@
+[
+  {
+    "name": "trial-month",
+    "pass": true,
+    "paidEnd": "2028-03-31T12:00:00.000Z",
+    "status": "canceled",
+    "noNewInvoice": true
+  },
+  {
+    "name": "trial-restart-year",
+    "pass": true,
+    "paidEnd": "2030-01-31T12:00:00.000Z",
+    "status": "canceled",
+    "noNewInvoice": true
+  },
+  {
+    "name": "phase-candidate-clamped-month",
+    "pass": true,
+    "undo": true,
+    "nextEnd": "2027-07-31T12:00:00.000Z",
+    "fullRenewal": 12450
+  }
+]

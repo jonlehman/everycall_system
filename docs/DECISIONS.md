@@ -7,6 +7,8 @@
 
 - UPIB-004/007: delayed first binding may reconcile complete, contiguous, unchanged-plan canonical paid renewals without provider writes. Persist original invoice receipts and the current paid window atomically with first binding; preserve original usage/payment anchors and already-bound retry state. Unsupported debt, gaps, cancellation or schedules require visible manual review, not invented grace, arrears or another setup payment.
 
+- UPIB-007/011: real canonical first renewal can label an entire fully charged original-calendar term as `proration=true`. Recognize that recurring representation only on a subscription-cycle invoice with exactly one full configured base line, exact full invoice total, owned subscription, quantity/currency and original whole-term boundaries. Partial terms/amounts, extra or credit lines, foreign identity and other billing reasons do not qualify; one-time bridge proration remains rejected. This changes canonical interpretation, not charge parameters or pricing.
+
 ## 2026-11-13 — Guarded UPIB-014 activation
 
 - Prepare a default-dry-run, source/SQL/target/evidence-pinned activation runner with fresh canonical provider and exact deployment evidence, actual old-creator retirement, complete local inventory CAS and atomic catalog/gate/audit changes. It requires an explicit recorded owner decision for every legacy subscription; the supported retain-billing/disable-service option is never a default. Preparing or testing the runner does not choose that option or authorize activation. Historical charges and provider subscriptions remain unchanged. See [activation procedure](reviews/unified-paid-intake-activation.md).

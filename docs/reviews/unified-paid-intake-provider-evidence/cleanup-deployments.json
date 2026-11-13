@@ -1,0 +1,70 @@
+[
+  {
+    "probeDeployment": "dpl_8fxhTFfEJjVhmAxGdLZUffpqc7bW",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_7phY4n7UEVUe7cFKoGRbxgVfrwnx",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_G2gKH4wMvJahNHGN7jviahUAj1tV",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_J4NjbAvauPDQsFWULETg3XXd7b8U",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_GJLmCBc666qZr8ZpG2H5tneGfid4",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_AG8h24WVvbHReMtdRbqz2umTFb8Z",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_5S3NsJ46ELNgjqEh2w4md4Ex25Lv",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_AtRamyQuB3uTgmmGUmBfKktn6PUX",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_Phf7uiC2CCcEZRvYdXAyvLpiyCLG",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_HUAPXYqXaEG1o3HoTwSxFMfS1GqU",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_G7Lg1dq1np57Fd9wYqc96tnx7ot7",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_GVZ25oJEFppdzetKLmc4Py2MiY2f",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_FgsUG7wvFHb6z9jrDXxGEAT4sHzv",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_Hjw7r82Yh1Sd1MHrCWhVnu8YuBHh",
+    "removed": true
+  },
+  {
+    "probeDeployment": "dpl_8HqKAUEDqo64RPwbA3MWfeNNdFij",
+    "removed": true
+  },
+  {
+    "allProbeDeploymentsRemoved": 15,
+    "finalShareRevoked": true,
+    "canonicalUnchanged": true,
+    "cronsUnchanged": true,
+    "protectionUnchanged": true,
+    "websiteCandidateUntouched": true
+  }
+]

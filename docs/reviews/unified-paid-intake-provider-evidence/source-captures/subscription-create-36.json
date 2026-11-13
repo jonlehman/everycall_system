@@ -1,0 +1,1438 @@
+{
+  "fixtureOnly": true,
+  "sourceSha256": {
+    "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+    "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+    "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+    "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+    "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+    "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+    "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+    "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+    "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+  },
+  "requests": [
+    {
+      "plan": "starter",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_2",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_2",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_2"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_2",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_6",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_6",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_6"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_6",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_10",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_10",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_10"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_10",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_14",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_14",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_14"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_14",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_18",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_18",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_18"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_18",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_22",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_22",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_22"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_22",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_26",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_26",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_26"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_26",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 3,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_30",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_30",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_30"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_30",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 3,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "year",
+      "kind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_34",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_34",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_34"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_34",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 3,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_0",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_0",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_0"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_0",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_1",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_1",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_1"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_1",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_3",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_3",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_3"
+        },
+        "trial_end": 1832934896,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_3",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 1,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_4",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_4",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_4"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_4",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_5",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_5",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_5"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_5",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_7",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_7",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_7"
+        },
+        "trial_end": 1832934896,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_7",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 1,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_8",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_8",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_8"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_8",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_9",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_9",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_9"
+        },
+        "trial_end": 1803818096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_9",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_12",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_12",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_12"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_12",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2027-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_11",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_11",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_11"
+        },
+        "trial_end": 1832934896,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_11",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 1,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_13",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_13",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_13"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_13",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_15",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_15",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_15"
+        },
+        "trial_end": 1864557296,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_15",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 1,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_16",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_16",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_16"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_16",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_17",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_17",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_17"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_17",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_19",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_19",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_19"
+        },
+        "trial_end": 1864557296,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_19",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 1,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_20",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_20",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_20"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_20",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_21",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_21",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_21"
+        },
+        "trial_end": 1835440496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_21",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2028-01-31T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_23",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_23",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_23"
+        },
+        "trial_end": 1864557296,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_23",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 1,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 31
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_24",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_24",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_24"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_24",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_25",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_25",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_25"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_25",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "starter",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_starter_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_27",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "starter",
+          "paid_intake_id": "calendar_27",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_27"
+        },
+        "trial_end": 1866976496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_27",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_28",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_28",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_28"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_28",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_29",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_29",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_29"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_29",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "growth",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_growth_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_31",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "growth",
+          "paid_intake_id": "calendar_31",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_31"
+        },
+        "trial_end": 1866976496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_31",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "month",
+      "kind": "setup",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_32",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_32",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_32"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_32",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "month",
+      "kind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_month",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_33",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_33",
+          "billing_interval": "month",
+          "paid_purchase_id": "calendar_33"
+        },
+        "trial_end": 1837946096,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_33",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    },
+    {
+      "plan": "pro",
+      "interval": "year",
+      "kind": "restart",
+      "paidAt": "2028-02-29T12:34:56Z",
+      "request": {
+        "items": [
+          {
+            "price": "price_pro_year",
+            "quantity": 1
+          }
+        ],
+        "customer": "cus_calendar_35",
+        "metadata": {
+          "app": "everycall",
+          "plan_code": "pro",
+          "paid_intake_id": "calendar_35",
+          "billing_interval": "year",
+          "paid_purchase_id": "calendar_35"
+        },
+        "trial_end": 1866976496,
+        "billing_mode": {
+          "type": "flexible"
+        },
+        "payment_behavior": "error_if_incomplete",
+        "payment_settings": {
+          "save_default_payment_method": "on_subscription"
+        },
+        "collection_method": "charge_automatically",
+        "proration_behavior": "none",
+        "default_payment_method": "pm_calendar_35",
+        "billing_cycle_anchor_config": {
+          "hour": 12,
+          "month": 2,
+          "minute": 34,
+          "second": 56,
+          "day_of_month": 29
+        }
+      }
+    }
+  ]
+}

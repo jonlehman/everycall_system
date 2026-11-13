@@ -1,0 +1,1825 @@
+{
+  "fixtureOnly": true,
+  "sourceSha256": {
+    "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+    "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+    "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+    "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+    "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+    "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+    "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+    "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+    "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+  },
+  "requests": [
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_0",
+              "paid_billing_change_id": "change_bf23612f-5753-4b05-afb4-3dd835653e17"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_1",
+              "paid_billing_change_id": "change_5ea17695-c528-49e8-9eac-284cc23eb45f"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_2",
+              "paid_billing_change_id": "change_2e196be3-4e28-40b5-a84e-3f4fbad7246b"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_3",
+              "paid_billing_change_id": "change_2463dab7-c61a-482d-9c60-c2bcd4f0457c"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_4",
+              "paid_billing_change_id": "change_ee3ccd77-4430-4a62-88bc-73e5b92f1f69"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_5",
+              "paid_billing_change_id": "change_36289303-4459-4275-80fd-90ac432d4099"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_6",
+              "paid_billing_change_id": "change_b1792868-4b16-4f1b-801c-e5dd329e3be0"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_6",
+                  "paid_billing_change_id": "change_b1792868-4b16-4f1b-801c-e5dd329e3be0"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_starter",
+                  "currency": "usd",
+                  "unit_amount": 7450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_7",
+              "paid_billing_change_id": "change_48a4e981-7f5f-43e6-b916-872b8d9edf1f"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_8",
+              "paid_billing_change_id": "change_938f306d-7c83-4fbc-bccf-c15c4e5ab5f7"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_8",
+                  "paid_billing_change_id": "change_938f306d-7c83-4fbc-bccf-c15c4e5ab5f7"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_growth",
+                  "currency": "usd",
+                  "unit_amount": 12450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_9",
+              "paid_billing_change_id": "change_6ce8646c-c63d-41a8-b2b7-2a60b797be7b"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_10",
+              "paid_billing_change_id": "change_3ddfe032-3b5e-48b6-9504-4f1f4f69c0ff"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_10",
+                  "paid_billing_change_id": "change_3ddfe032-3b5e-48b6-9504-4f1f4f69c0ff"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_pro",
+                  "currency": "usd",
+                  "unit_amount": 17450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "starter",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_11",
+              "paid_billing_change_id": "change_05ac7b69-5604-4f47-840b-f723d19266cc"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_12",
+              "paid_billing_change_id": "change_a4a7c784-c3d1-47af-9faf-46330c0d9762"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_13",
+              "paid_billing_change_id": "change_ded838c8-3c42-4bcd-bb00-511d95035015"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_14",
+              "paid_billing_change_id": "change_f990387c-777b-498d-a08a-53f46d202573"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_15",
+              "paid_billing_change_id": "change_50c2ca66-735d-4150-9202-edc52feeca7b"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_16",
+              "paid_billing_change_id": "change_ad8ec004-f01a-4eb0-869f-73a1259cd31a"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_17",
+              "paid_billing_change_id": "change_27cc4e82-394e-4ba2-8837-9a73c612462f"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_18",
+              "paid_billing_change_id": "change_0648cb4d-ac7a-4d86-b9dd-4b46da24f381"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_18",
+                  "paid_billing_change_id": "change_0648cb4d-ac7a-4d86-b9dd-4b46da24f381"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_starter",
+                  "currency": "usd",
+                  "unit_amount": 7450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_19",
+              "paid_billing_change_id": "change_b3c5e4d1-2b8f-4540-bc73-a31ad640c50b"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_20",
+              "paid_billing_change_id": "change_d7fbfe14-e4d0-497e-a76d-fec23447ecda"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_20",
+                  "paid_billing_change_id": "change_d7fbfe14-e4d0-497e-a76d-fec23447ecda"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_growth",
+                  "currency": "usd",
+                  "unit_amount": 12450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_21",
+              "paid_billing_change_id": "change_192f56af-f3fc-4748-a758-44b64f4b0626"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_22",
+              "paid_billing_change_id": "change_df5bb746-fdb6-44b4-9537-82896712f29d"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_22",
+                  "paid_billing_change_id": "change_df5bb746-fdb6-44b4-9537-82896712f29d"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_pro",
+                  "currency": "usd",
+                  "unit_amount": 17450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "growth",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_23",
+              "paid_billing_change_id": "change_3c96241f-5808-4b19-a3cf-7cd5c81258de"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_24",
+              "paid_billing_change_id": "change_9a9e6c52-fed6-429f-854e-fc5f9c306a4f"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_25",
+              "paid_billing_change_id": "change_f86234a3-5ecf-4a21-bab3-542a24f92a35"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_26",
+              "paid_billing_change_id": "change_4c4b23b1-87f7-49bf-a06b-ab0f9823cd11"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_27",
+              "paid_billing_change_id": "change_93cc4cf6-a760-4de3-8d16-01890b48855c"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_28",
+              "paid_billing_change_id": "change_248add85-dd1e-4ae7-9253-27feb25b5a79"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "month",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1832932800,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_29",
+              "paid_billing_change_id": "change_243320fc-3313-4523-bc8e-52f73af6996a"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_30",
+              "paid_billing_change_id": "change_cb0be021-0424-461d-9a4c-8e03e0942ceb"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_30",
+                  "paid_billing_change_id": "change_cb0be021-0424-461d-9a4c-8e03e0942ceb"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_starter",
+                  "currency": "usd",
+                  "unit_amount": 7450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "starter",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_starter_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "starter",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_31",
+              "paid_billing_change_id": "change_a40def6c-231e-457b-ad00-ea0d5b85f0f5"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_32",
+              "paid_billing_change_id": "change_c428555f-9c95-43fc-875f-cb1536d2b792"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_32",
+                  "paid_billing_change_id": "change_c428555f-9c95-43fc-875f-cb1536d2b792"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_growth",
+                  "currency": "usd",
+                  "unit_amount": 12450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "growth",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_growth_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "growth",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_33",
+              "paid_billing_change_id": "change_f3b0cbc1-e874-41c4-a0a1-7d5c72457987"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "month",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_month",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1838116800,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "month",
+              "paid_purchase_id": "bridge_34",
+              "paid_billing_change_id": "change_9a24ca30-7e5a-41a6-a83e-b12c31bb34c3"
+            },
+            "trial_end": 1838116800,
+            "start_date": 1835438400,
+            "add_invoice_items": [
+              {
+                "metadata": {
+                  "app": "everycall",
+                  "item_type": "paid_base_bridge",
+                  "paid_purchase_id": "bridge_34",
+                  "paid_billing_change_id": "change_9a24ca30-7e5a-41a6-a83e-b12c31bb34c3"
+                },
+                "quantity": 1,
+                "price_data": {
+                  "product": "prod_pro",
+                  "currency": "usd",
+                  "unit_amount": 17450
+                }
+              }
+            ],
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    },
+    {
+      "sourcePlan": "pro",
+      "sourceInterval": "year",
+      "targetPlan": "pro",
+      "targetInterval": "year",
+      "usageAnchorAt": "2027-01-31T12:00:00Z",
+      "request": {
+        "phases": [
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1835438400,
+            "metadata": {},
+            "start_date": 1803816000,
+            "collection_method": "charge_automatically",
+            "proration_behavior": "none"
+          },
+          {
+            "items": [
+              {
+                "price": "price_pro_year",
+                "quantity": 1
+              }
+            ],
+            "end_date": 1866974400,
+            "metadata": {
+              "plan_code": "pro",
+              "billing_interval": "year",
+              "paid_purchase_id": "bridge_35",
+              "paid_billing_change_id": "change_4070ed98-0b85-4284-930c-bc7ee9be67b0"
+            },
+            "start_date": 1835438400,
+            "proration_behavior": "none"
+          }
+        ],
+        "end_behavior": "release",
+        "default_settings": {
+          "default_payment_method": ""
+        },
+        "proration_behavior": "none"
+      }
+    }
+  ]
+}

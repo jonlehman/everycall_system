@@ -1,0 +1,252 @@
+[
+  {
+    "source": 1,
+    "pass": false,
+    "error": "annual-usage-1/advance-month: HTTP 422: {\"error\":\"clock_already_advanced\"}",
+    "cleaned": true
+  },
+  {
+    "source": 5,
+    "month": 0,
+    "pass": true,
+    "invoice": "in_1UbEjj2HodUYhbMcLG3aabcZ",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 0,
+    "pass": true,
+    "invoice": "in_1UbEjo2HodUYhbMcjuAiOsgs",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 1,
+    "pass": true,
+    "invoice": "in_1UbEk02HodUYhbMczzB14s80",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 1,
+    "pass": true,
+    "invoice": "in_1UbEk52HodUYhbMc7VoUHofS",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 2,
+    "pass": true,
+    "invoice": "in_1UbEkM2HodUYhbMcDY49NKyA",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 2,
+    "pass": true,
+    "invoice": "in_1UbEkN2HodUYhbMc7cljRdGw",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 3,
+    "pass": true,
+    "invoice": "in_1UbEki2HodUYhbMcpYAtaUeR",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 3,
+    "pass": true,
+    "invoice": "in_1UbEkj2HodUYhbMcz63wDBgN",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 4,
+    "pass": true,
+    "invoice": "in_1UbEl32HodUYhbMcTznfRGUC",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 4,
+    "pass": true,
+    "invoice": "in_1UbElE2HodUYhbMcUjS3sH1m",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 5,
+    "pass": true,
+    "invoice": "in_1UbElY2HodUYhbMcDcEUPL2E",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 5,
+    "pass": true,
+    "invoice": "in_1UbEla2HodUYhbMc780gAMHp",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 6,
+    "pass": true,
+    "invoice": "in_1UbElr2HodUYhbMcHTeqDOKr",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 6,
+    "pass": true,
+    "invoice": "in_1UbElt2HodUYhbMcQs8NKWiw",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 7,
+    "pass": true,
+    "invoice": "in_1UbEm62HodUYhbMcVBcRReTO",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 7,
+    "pass": true,
+    "invoice": "in_1UbEm32HodUYhbMcXRkF0j5m",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 8,
+    "pass": true,
+    "invoice": "in_1UbEmJ2HodUYhbMcZrvZPeiX",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 8,
+    "pass": true,
+    "invoice": "in_1UbEmP2HodUYhbMc4pcOI10v",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 9,
+    "pass": true,
+    "invoice": "in_1UbEmb2HodUYhbMcp1tx0UYj",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 9,
+    "pass": true,
+    "invoice": "in_1UbEmh2HodUYhbMck4xTVfwv",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 10,
+    "pass": true,
+    "invoice": "in_1UbEmx2HodUYhbMcgHVsucMi",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 10,
+    "pass": true,
+    "invoice": "in_1UbEmz2HodUYhbMcjcGLEd2k",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "month": 11,
+    "pass": true,
+    "invoice": "in_1UbEnA2HodUYhbMcVmHMtLNh",
+    "amountPaid": 525,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 11,
+    "pass": true,
+    "invoice": "in_1UbEnC2HodUYhbMcI88eNLtH",
+    "amountPaid": 600,
+    "subscriptionEnd": "2029-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "month": 12,
+    "pass": true,
+    "invoice": "in_1UbEnT2HodUYhbMc9u5Cvwub",
+    "amountPaid": 600,
+    "subscriptionEnd": "2030-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 3,
+    "pass": true,
+    "monthlyInvoices": 13,
+    "baseInvoices": [
+      {
+        "total": 126990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "total": 126990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "cleaned": true
+  },
+  {
+    "source": 5,
+    "month": 12,
+    "pass": true,
+    "invoice": "in_1UbEnW2HodUYhbMcTlNW9O1s",
+    "amountPaid": 525,
+    "subscriptionEnd": "2030-02-28T12:00:00.000Z"
+  },
+  {
+    "source": 5,
+    "pass": true,
+    "monthlyInvoices": 13,
+    "baseInvoices": [
+      {
+        "total": 177990,
+        "status": "paid",
+        "created": "2029-02-28T12:00:00.000Z"
+      },
+      {
+        "total": 177990,
+        "status": "paid",
+        "created": "2028-02-29T12:00:00.000Z"
+      }
+    ],
+    "cleaned": true
+  }
+]

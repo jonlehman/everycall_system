@@ -1,0 +1,148 @@
+{
+  "fixtureOnly": true,
+  "sourceSha256": {
+    "paidIntake.js": "471ed64f552d52054c148f5131bdb6e9783d208e33d8d4889249d44cf9eb4ff4",
+    "paidReinstatement.js": "06ed14afbfce252965410b37551592eac21eb6473b4edacef4f7b6888c22c37e",
+    "paidPurchaseContract.js": "e1344f91e0a6630fe17bf5de70d69213c148b1960872b8692611fe1de2a4dcf4",
+    "paidPurchaseEvents.js": "037be399875906203594f26808ce6b72cf2dcb86dc5604c84da3d80ffd4dca7d",
+    "paidBillingChanges.js": "f8ac65592c1f5036af161e5dfe571816975eab42101865122df104425b913f3e",
+    "paidBaseInvoice.js": "9b802e3210c7f807d32b650804dda15d09ca054b46fe2fe264776a4e90954263",
+    "paidUsageInvoices.js": "7420d9cff3daf9e01b83e4c9465d12bb29a222be5a149da4885d0aa2a32a94cb",
+    "callBilling.js": "d0e7f06f956deb989dfb704537dc53ce3cb71a6cc153276442864fbda9d134a1",
+    "lib/paidBillingCalendar.js": "cf61876558d563908409861b7c42baa563b8a58008a2ed530d9b943ab5e62ebc"
+  },
+  "requests": [
+    {
+      "methodSource": "subscription",
+      "customer": "cus_usage_subscription",
+      "subscription": "sub_usage_subscription",
+      "paymentMethod": "pm_subscription",
+      "invoiceId": "in_usage_subscription",
+      "periodId": "1",
+      "periodStart": "2028-02-29T00:00:00.000Z",
+      "periodEnd": "2028-03-31T00:00:00.000Z",
+      "frozenAmount": 900,
+      "currentRate": 175,
+      "calls": [
+        {
+          "action": "invoices.create",
+          "args": [
+            {
+              "customer": "cus_usage_subscription",
+              "currency": "usd",
+              "collection_method": "charge_automatically",
+              "default_payment_method": "pm_subscription",
+              "auto_advance": false,
+              "pending_invoice_items_behavior": "exclude",
+              "metadata": {
+                "tenant_key": "usage_subscription",
+                "billing_period_id": "1",
+                "item_type": "call_overage"
+              }
+            },
+            {
+              "idempotencyKey": "paid-usage-1-invoice"
+            }
+          ]
+        },
+        {
+          "action": "invoiceItems.create",
+          "args": [
+            {
+              "customer": "cus_usage_subscription",
+              "invoice": "in_usage_subscription",
+              "amount": 900,
+              "currency": "usd",
+              "description": "3 call overages",
+              "metadata": {
+                "billing_period_id": "1",
+                "item_type": "call_overage"
+              }
+            },
+            {
+              "idempotencyKey": "paid-usage-1-item"
+            }
+          ]
+        },
+        {
+          "action": "invoices.finalizeInvoice",
+          "args": [
+            "in_usage_subscription",
+            {
+              "auto_advance": true
+            },
+            {
+              "idempotencyKey": "paid-usage-1-finalize"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "methodSource": "customer",
+      "customer": "cus_usage_customer",
+      "subscription": "sub_usage_customer",
+      "paymentMethod": "pm_customer",
+      "invoiceId": "in_usage_customer",
+      "periodId": "2",
+      "periodStart": "2028-02-29T00:00:00.000Z",
+      "periodEnd": "2028-03-31T00:00:00.000Z",
+      "frozenAmount": 900,
+      "currentRate": 175,
+      "calls": [
+        {
+          "action": "invoices.create",
+          "args": [
+            {
+              "customer": "cus_usage_customer",
+              "currency": "usd",
+              "collection_method": "charge_automatically",
+              "default_payment_method": "pm_customer",
+              "auto_advance": false,
+              "pending_invoice_items_behavior": "exclude",
+              "metadata": {
+                "tenant_key": "usage_customer",
+                "billing_period_id": "2",
+                "item_type": "call_overage"
+              }
+            },
+            {
+              "idempotencyKey": "paid-usage-2-invoice"
+            }
+          ]
+        },
+        {
+          "action": "invoiceItems.create",
+          "args": [
+            {
+              "customer": "cus_usage_customer",
+              "invoice": "in_usage_customer",
+              "amount": 900,
+              "currency": "usd",
+              "description": "3 call overages",
+              "metadata": {
+                "billing_period_id": "2",
+                "item_type": "call_overage"
+              }
+            },
+            {
+              "idempotencyKey": "paid-usage-2-item"
+            }
+          ]
+        },
+        {
+          "action": "invoices.finalizeInvoice",
+          "args": [
+            "in_usage_customer",
+            {
+              "auto_advance": true
+            },
+            {
+              "idempotencyKey": "paid-usage-2-finalize"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

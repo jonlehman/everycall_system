@@ -1,0 +1,68 @@
+{
+  "run": "upib_609dfdd83248380d",
+  "apiVersion": "2026-02-25.clover",
+  "scenario": "checkout-2-none-leap-none-trial_anchor-customer_seed_and_save-source_keys-reuse_consent",
+  "paidAt": "2026-11-13T08:24:28.000Z",
+  "enrollmentVariant": "trial_anchor",
+  "timing": "same_second",
+  "ready": true,
+  "subscription": {
+    "id": "sub_1UbFwx2HodUYhbMc8sp18XYa",
+    "livemode": false,
+    "status": "trialing",
+    "price": "price_1UbEU12HodUYhbMclYord78k",
+    "start": "2026-11-13T08:35:11.000Z",
+    "end": "2026-12-13T08:24:28.000Z",
+    "anchor": {
+      "day_of_month": 13,
+      "hour": 8,
+      "minute": 24,
+      "month": null,
+      "second": 28
+    },
+    "billingCycleAnchor": "2026-12-13T08:24:28.000Z",
+    "schedule": null,
+    "defaultPaymentMethod": "pm_1UbFti2HodUYhbMcGkLMqLec",
+    "saveDefaultPaymentMethod": "on_subscription",
+    "cancelAtPeriodEnd": false,
+    "trialEnd": "2026-12-13T08:24:28.000Z"
+  },
+  "customerDefaultPaymentMethod": "pm_1UbFti2HodUYhbMcGkLMqLec",
+  "invoices": [
+    {
+      "id": "in_1UbFwx2HodUYhbMcs5qanJ4n",
+      "livemode": false,
+      "status": "paid",
+      "total": 0,
+      "amountPaid": 0,
+      "amountDue": 0,
+      "customer": "cus_VcUlw3TJ7a8Uwn",
+      "subscription": "sub_1UbFwx2HodUYhbMc8sp18XYa",
+      "subscriptionParentType": "subscription_details",
+      "amountRemaining": 0,
+      "billingReason": "subscription_create",
+      "created": "2026-11-13T08:35:11.000Z",
+      "attemptCount": 0,
+      "nextPaymentAttempt": null
+    },
+    {
+      "id": "in_1UbFmb2HodUYhbMcraLnIRpj",
+      "livemode": false,
+      "status": "paid",
+      "total": 10000,
+      "amountPaid": 10000,
+      "amountDue": 10000,
+      "customer": "cus_VcUlw3TJ7a8Uwn",
+      "subscription": null,
+      "subscriptionParentType": null,
+      "amountRemaining": 0,
+      "billingReason": "manual",
+      "created": "2026-11-13T08:24:28.000Z",
+      "attemptCount": 1,
+      "nextPaymentAttempt": null
+    }
+  ],
+  "expectedPrice": "price_1UbEU12HodUYhbMclYord78k",
+  "expectedBaseAmount": 12450,
+  "step": 0
+}

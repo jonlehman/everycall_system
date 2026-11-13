@@ -1,0 +1,301 @@
+{
+  "run": "upib_609dfdd83248380d",
+  "apiVersion": "2026-02-25.clover",
+  "scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+  "paidAt": "2027-01-31T12:00:00.000Z",
+  "enrollmentVariant": "trial_anchor",
+  "timing": "same_second",
+  "subscription": {
+    "id": "sub_1UbGSs2HodUYhbMcpTr0nXn2",
+    "customer": "cus_VcVTAijN3G8nPG",
+    "livemode": false,
+    "status": "active",
+    "metadata": {
+      "acceptance_run": "upib_609dfdd83248380d",
+      "acceptance_scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+      "app": "everycall",
+      "billing_interval": "month",
+      "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+      "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+      "plan_code": "starter"
+    },
+    "items": {
+      "object": "list",
+      "has_more": false,
+      "data": [
+        {
+          "id": "si_VcVTbaN16ZEk2s",
+          "quantity": 1,
+          "current_period_start": 1806494400,
+          "current_period_end": 1809086400,
+          "price": {
+            "id": "price_1UbEU12HodUYhbMcs5GQGUYA",
+            "livemode": false,
+            "currency": "usd",
+            "unit_amount": 7450,
+            "product": "prod_VcTQADJrdVjbpf",
+            "recurring": {
+              "interval": "month",
+              "interval_count": 1,
+              "meter": null,
+              "trial_period_days": null,
+              "usage_type": "licensed"
+            }
+          }
+        }
+      ]
+    },
+    "cancel_at_period_end": false,
+    "cancel_at": null,
+    "canceled_at": null,
+    "ended_at": null,
+    "schedule": null,
+    "trial_end": 1803816000,
+    "billing_mode": {
+      "flexible": {
+        "proration_discounts": "included"
+      },
+      "type": "flexible",
+      "updated_at": 1801396800
+    },
+    "billing_cycle_anchor": 1806494400,
+    "billing_cycle_anchor_config": {
+      "day_of_month": 31,
+      "hour": 12,
+      "minute": 0,
+      "month": null,
+      "second": 0
+    }
+  },
+  "invoiceListRequest": {
+    "customer": "cus_VcVTAijN3G8nPG",
+    "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2",
+    "limit": 100
+  },
+  "invoiceList": {
+    "object": "list",
+    "has_more": false,
+    "data": [
+      {
+        "id": "in_1UbGTt2HodUYhbMcm00Tcyi0",
+        "customer": "cus_VcVTAijN3G8nPG",
+        "livemode": false,
+        "status": "paid",
+        "currency": "usd",
+        "total": 7450,
+        "amount_paid": 7450,
+        "amount_remaining": 0,
+        "parent": {
+          "quote_details": null,
+          "subscription_details": {
+            "metadata": {
+              "acceptance_run": "upib_609dfdd83248380d",
+              "acceptance_scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "app": "everycall",
+              "billing_interval": "month",
+              "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "plan_code": "starter"
+            },
+            "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2"
+          },
+          "type": "subscription_details"
+        },
+        "billing_reason": "subscription_cycle",
+        "created": 1806494400,
+        "lines": {
+          "object": "list",
+          "has_more": false,
+          "data": [
+            {
+              "id": "il_1VPKuq2HodUYhbMcW7yI6jXD",
+              "amount": 7450,
+              "currency": "usd",
+              "description": "1 \u00d7 EveryCall disposable acceptance upib_609dfdd83248380d (at $74.50 / month)",
+              "quantity": 1,
+              "period": {
+                "end": 1809086400,
+                "start": 1806494400
+              },
+              "parent": {
+                "invoice_item_details": null,
+                "license_fee_subscription_details": null,
+                "subscription_item_details": {
+                  "invoice_item": null,
+                  "proration": false,
+                  "proration_details": {
+                    "credited_items": null
+                  },
+                  "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2",
+                  "subscription_item": "si_VcVTbaN16ZEk2s"
+                },
+                "type": "subscription_item_details"
+              },
+              "pricing": {
+                "price_details": {
+                  "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+                  "product": "prod_VcTQADJrdVjbpf"
+                },
+                "type": "price_details",
+                "unit_amount_decimal": "7450"
+              },
+              "metadata": {
+                "acceptance_run": "upib_609dfdd83248380d",
+                "acceptance_scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+                "app": "everycall",
+                "billing_interval": "month",
+                "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+                "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+                "plan_code": "starter"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "in_1UbGT92HodUYhbMcHRJFhkBI",
+        "customer": "cus_VcVTAijN3G8nPG",
+        "livemode": false,
+        "status": "paid",
+        "currency": "usd",
+        "total": 7450,
+        "amount_paid": 7450,
+        "amount_remaining": 0,
+        "parent": {
+          "quote_details": null,
+          "subscription_details": {
+            "metadata": {
+              "acceptance_run": "upib_609dfdd83248380d",
+              "acceptance_scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "app": "everycall",
+              "billing_interval": "month",
+              "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "plan_code": "starter"
+            },
+            "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2"
+          },
+          "type": "subscription_details"
+        },
+        "billing_reason": "subscription_cycle",
+        "created": 1803816000,
+        "lines": {
+          "object": "list",
+          "has_more": false,
+          "data": [
+            {
+              "id": "il_1VE68q2HodUYhbMcHE2okEsQ",
+              "amount": 7450,
+              "currency": "usd",
+              "description": "Remaining time on EveryCall disposable acceptance upib_609dfdd83248380d after 28 Feb 2027",
+              "quantity": 1,
+              "period": {
+                "end": 1806494400,
+                "start": 1803816000
+              },
+              "parent": {
+                "invoice_item_details": null,
+                "license_fee_subscription_details": null,
+                "subscription_item_details": {
+                  "invoice_item": "ii_1UbGT92HodUYhbMcgfqMwHeU",
+                  "proration": true,
+                  "proration_details": {
+                    "credited_items": null
+                  },
+                  "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2",
+                  "subscription_item": "si_VcVTbaN16ZEk2s"
+                },
+                "type": "subscription_item_details"
+              },
+              "pricing": {
+                "price_details": {
+                  "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+                  "product": "prod_VcTQADJrdVjbpf"
+                },
+                "type": "price_details",
+                "unit_amount_decimal": null
+              },
+              "metadata": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "in_1UbGSs2HodUYhbMcbhXvasbt",
+        "customer": "cus_VcVTAijN3G8nPG",
+        "livemode": false,
+        "status": "paid",
+        "currency": "usd",
+        "total": 0,
+        "amount_paid": 0,
+        "amount_remaining": 0,
+        "parent": {
+          "quote_details": null,
+          "subscription_details": {
+            "metadata": {
+              "acceptance_run": "upib_609dfdd83248380d",
+              "acceptance_scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "app": "everycall",
+              "billing_interval": "month",
+              "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+              "plan_code": "starter"
+            },
+            "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2"
+          },
+          "type": "subscription_details"
+        },
+        "billing_reason": "subscription_create",
+        "created": 1801396800,
+        "lines": {
+          "object": "list",
+          "has_more": false,
+          "data": [
+            {
+              "id": "il_1V3wnU2HodUYhbMcVyK63KgZ",
+              "amount": 0,
+              "currency": "usd",
+              "description": "Free trial for 1 \u00d7 EveryCall disposable acceptance upib_609dfdd83248380d",
+              "quantity": 1,
+              "period": {
+                "end": 1803816000,
+                "start": 1801396800
+              },
+              "parent": {
+                "invoice_item_details": null,
+                "license_fee_subscription_details": null,
+                "subscription_item_details": {
+                  "invoice_item": null,
+                  "proration": false,
+                  "proration_details": {
+                    "credited_items": null
+                  },
+                  "subscription": "sub_1UbGSs2HodUYhbMcpTr0nXn2",
+                  "subscription_item": "si_VcVTbaN16ZEk2s"
+                },
+                "type": "subscription_item_details"
+              },
+              "pricing": {
+                "price_details": {
+                  "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+                  "product": "prod_VcTQADJrdVjbpf"
+                },
+                "type": "price_details",
+                "unit_amount_decimal": "0"
+              },
+              "metadata": {
+                "acceptance_run": "upib_609dfdd83248380d",
+                "acceptance_scenario": "begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+                "app": "everycall",
+                "billing_interval": "month",
+                "paid_intake_id": "acceptance_intake_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+                "paid_purchase_id": "acceptance_purchase_upib_609dfdd83248380d_begin-0-none-ordinary-none-trial_anchor-customer_seed_and_save-source_keys",
+                "plan_code": "starter"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -327,3 +327,10 @@ binding, build or number allocation. Provider outages retain bounded retry. Revi
 the known canonical subscription and invoices before any separately authorized
 remediation; do not infer grace, create arrears, restart an included month or ask
 for another setup payment to resolve a delayed job.
+
+Stripe can label a full first recurring cycle as proration even when the amount
+and original calendar window are exact. The reviewed verifier accepts that flag
+only for one full configured recurring line on a subscription-cycle invoice with
+the exact full total and owned identity. It does not accept partial terms, extra
+or credit lines, or infer coverage from Stripe's label alone. Preserve the raw
+provider response when diagnosing a refusal; do not rewrite its flags.

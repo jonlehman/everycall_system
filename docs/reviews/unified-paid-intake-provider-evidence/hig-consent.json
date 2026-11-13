@@ -1,0 +1,7 @@
+{
+  "observedBeforeSubmit": true,
+  "checkboxName": "savePaymentMethod",
+  "checked": false,
+  "wording": "Save payment details to EveryCall for future purchases",
+  "paymentOnlyEvidence": "Hosted invoice tests clicked Pay without selecting this checkbox. They prove canonical debt settlement and restored paid state on unchanged anchors, not explicit recurring-default replacement. Actual Portal replacement is separately tested."
+}

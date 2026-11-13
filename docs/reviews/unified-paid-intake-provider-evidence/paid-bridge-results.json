@@ -1,0 +1,332 @@
+[
+  {
+    "kind": "annual",
+    "scheduled": {
+      "run": "upib_609dfdd83248380d",
+      "apiVersion": "2026-02-25.clover",
+      "scenario": "begin-1-0-ordinary-none-trial_anchor-anniversary_paid_bridge",
+      "paidAt": "2027-01-31T12:00:00.000Z",
+      "enrollmentVariant": "trial_anchor",
+      "timing": "same_second",
+      "scheduleId": "sub_sched_1UbFBk2HodUYhbMcZY4t0aP7",
+      "effectiveAt": "2028-02-29T12:00:00.000Z",
+      "sourceSubscription": {
+        "id": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "livemode": false,
+        "status": "active",
+        "price": "price_1UbEU12HodUYhbMcsf8DNOj3",
+        "start": "2027-02-28T12:00:00.000Z",
+        "end": "2028-02-29T12:00:00.000Z",
+        "anchor": {
+          "day_of_month": 31,
+          "hour": 12,
+          "minute": 0,
+          "month": 2,
+          "second": 0
+        },
+        "billingCycleAnchor": "2028-02-29T12:00:00.000Z",
+        "schedule": null,
+        "defaultPaymentMethod": "pm_1UbFBQ2HodUYhbMcjoWlfDu0",
+        "cancelAtPeriodEnd": false,
+        "trialEnd": "2027-02-28T12:00:00.000Z"
+      },
+      "phases": [
+        {
+          "start": "2027-02-28T12:00:00.000Z",
+          "end": "2028-02-29T12:00:00.000Z",
+          "billingCycleAnchor": null,
+          "prorationBehavior": "none",
+          "trialEnd": null,
+          "addedInvoiceItems": []
+        },
+        {
+          "start": "2028-02-29T12:00:00.000Z",
+          "end": "2028-03-31T12:00:00.000Z",
+          "billingCycleAnchor": null,
+          "prorationBehavior": "none",
+          "trialEnd": "2028-03-31T12:00:00.000Z",
+          "addedInvoiceItems": [
+            {
+              "price": "price_1UbFBk2HodUYhbMcd594cEPB",
+              "quantity": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "kind": "annual",
+    "stage": "first_destination_term",
+    "subscription": {
+      "id": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+      "livemode": false,
+      "status": "trialing",
+      "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+      "start": "2028-02-29T12:00:00.000Z",
+      "end": "2028-03-31T12:00:00.000Z",
+      "anchor": null,
+      "billingCycleAnchor": "2028-03-31T12:00:00.000Z",
+      "schedule": "sub_sched_1UbFBk2HodUYhbMcZY4t0aP7",
+      "defaultPaymentMethod": "pm_1UbFBQ2HodUYhbMcjoWlfDu0",
+      "cancelAtPeriodEnd": false,
+      "trialEnd": "2028-03-31T12:00:00.000Z"
+    },
+    "invoices": [
+      {
+        "id": "in_1UbFCq2HodUYhbMcuSx0gyWZ",
+        "livemode": false,
+        "status": "paid",
+        "total": 7450,
+        "amountPaid": 7450,
+        "amountDue": 7450,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_update",
+        "created": "2028-02-29T12:00:00.000Z",
+        "attemptCount": 1,
+        "nextPaymentAttempt": null
+      },
+      {
+        "id": "in_1UbFBX2HodUYhbMc0kvN9Zu1",
+        "livemode": false,
+        "status": "paid",
+        "total": 75990,
+        "amountPaid": 75990,
+        "amountDue": 75990,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_cycle",
+        "created": "2027-02-28T12:00:00.000Z",
+        "attemptCount": 1,
+        "nextPaymentAttempt": null
+      },
+      {
+        "id": "in_1UbFBR2HodUYhbMcATGeqBXp",
+        "livemode": false,
+        "status": "paid",
+        "total": 0,
+        "amountPaid": 0,
+        "amountDue": 0,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_create",
+        "created": "2027-01-31T12:00:00.000Z",
+        "attemptCount": 0,
+        "nextPaymentAttempt": null
+      }
+    ]
+  },
+  {
+    "stage": "first_destination_lines",
+    "run": "upib_609dfdd83248380d",
+    "apiVersion": "2026-02-25.clover",
+    "scenario": "begin-1-0-ordinary-none-trial_anchor-anniversary_paid_bridge",
+    "paidAt": "2027-01-31T12:00:00.000Z",
+    "enrollmentVariant": "trial_anchor",
+    "timing": "same_second",
+    "invoice": {
+      "id": "in_1UbFCq2HodUYhbMcuSx0gyWZ",
+      "livemode": false,
+      "status": "paid",
+      "total": 7450,
+      "amountPaid": 7450,
+      "amountDue": 7450,
+      "customer": "cus_VcU9giSP8tp89y",
+      "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+      "subscriptionParentType": "subscription_details",
+      "amountRemaining": 0,
+      "billingReason": "subscription_update",
+      "created": "2028-02-29T12:00:00.000Z",
+      "attemptCount": 1,
+      "nextPaymentAttempt": null
+    },
+    "lines": [
+      {
+        "id": "il_1XMmZY2HodUYhbMcOg9KzphH",
+        "amount": 7450,
+        "currency": "usd",
+        "description": "EveryCall disposable acceptance upib_609dfdd83248380d",
+        "period": {
+          "end": 1838116800,
+          "start": 1835438400
+        },
+        "quantity": 1,
+        "parentType": "invoice_item_details",
+        "price": "price_1UbFBk2HodUYhbMcd594cEPB"
+      },
+      {
+        "id": "il_1XMmZZ2HodUYhbMcaEzBo60k",
+        "amount": 0,
+        "currency": "usd",
+        "description": "Free trial for 1 \u00d7 EveryCall disposable acceptance upib_609dfdd83248380d",
+        "period": {
+          "end": 1838116800,
+          "start": 1835438400
+        },
+        "quantity": 1,
+        "parentType": "subscription_item_details",
+        "price": "price_1UbEU12HodUYhbMcs5GQGUYA"
+      }
+    ]
+  },
+  {
+    "kind": "annual",
+    "stage": "after_phase_release",
+    "subscription": {
+      "id": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+      "livemode": false,
+      "status": "active",
+      "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+      "start": "2028-03-31T12:00:00.000Z",
+      "end": "2028-04-30T12:00:00.000Z",
+      "anchor": null,
+      "billingCycleAnchor": "2028-03-31T12:00:00.000Z",
+      "schedule": null,
+      "defaultPaymentMethod": "pm_1UbFBQ2HodUYhbMcjoWlfDu0",
+      "cancelAtPeriodEnd": false,
+      "trialEnd": "2028-03-31T12:00:00.000Z"
+    },
+    "invoices": [
+      {
+        "id": "in_1UbFD42HodUYhbMc1qbTr0Te",
+        "livemode": false,
+        "status": "paid",
+        "total": 7450,
+        "amountPaid": 7450,
+        "amountDue": 7450,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_cycle",
+        "created": "2028-03-31T12:00:00.000Z",
+        "attemptCount": 1,
+        "nextPaymentAttempt": null
+      },
+      {
+        "id": "in_1UbFCq2HodUYhbMcuSx0gyWZ",
+        "livemode": false,
+        "status": "paid",
+        "total": 7450,
+        "amountPaid": 7450,
+        "amountDue": 7450,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_update",
+        "created": "2028-02-29T12:00:00.000Z",
+        "attemptCount": 1,
+        "nextPaymentAttempt": null
+      },
+      {
+        "id": "in_1UbFBX2HodUYhbMc0kvN9Zu1",
+        "livemode": false,
+        "status": "paid",
+        "total": 75990,
+        "amountPaid": 75990,
+        "amountDue": 75990,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_cycle",
+        "created": "2027-02-28T12:00:00.000Z",
+        "attemptCount": 1,
+        "nextPaymentAttempt": null
+      },
+      {
+        "id": "in_1UbFBR2HodUYhbMcATGeqBXp",
+        "livemode": false,
+        "status": "paid",
+        "total": 0,
+        "amountPaid": 0,
+        "amountDue": 0,
+        "customer": "cus_VcU9giSP8tp89y",
+        "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+        "subscriptionParentType": "subscription_details",
+        "amountRemaining": 0,
+        "billingReason": "subscription_create",
+        "created": "2027-01-31T12:00:00.000Z",
+        "attemptCount": 0,
+        "nextPaymentAttempt": null
+      }
+    ]
+  },
+  {
+    "stage": "after_release_lines",
+    "run": "upib_609dfdd83248380d",
+    "apiVersion": "2026-02-25.clover",
+    "scenario": "begin-1-0-ordinary-none-trial_anchor-anniversary_paid_bridge",
+    "paidAt": "2027-01-31T12:00:00.000Z",
+    "enrollmentVariant": "trial_anchor",
+    "timing": "same_second",
+    "invoice": {
+      "id": "in_1UbFD42HodUYhbMc1qbTr0Te",
+      "livemode": false,
+      "status": "paid",
+      "total": 7450,
+      "amountPaid": 7450,
+      "amountDue": 7450,
+      "customer": "cus_VcU9giSP8tp89y",
+      "subscription": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+      "subscriptionParentType": "subscription_details",
+      "amountRemaining": 0,
+      "billingReason": "subscription_cycle",
+      "created": "2028-03-31T12:00:00.000Z",
+      "attemptCount": 1,
+      "nextPaymentAttempt": null
+    },
+    "lines": [
+      {
+        "id": "il_1XY1LY2HodUYhbMcx7Z9Psqi",
+        "amount": 7450,
+        "currency": "usd",
+        "description": "1 \u00d7 EveryCall disposable acceptance upib_609dfdd83248380d (at $74.50 / month)",
+        "period": {
+          "end": 1840708800,
+          "start": 1838116800
+        },
+        "quantity": 1,
+        "parentType": "subscription_item_details",
+        "price": "price_1UbEU12HodUYhbMcs5GQGUYA"
+      }
+    ]
+  },
+  {
+    "stage": "cancel_boundary",
+    "run": "upib_609dfdd83248380d",
+    "apiVersion": "2026-02-25.clover",
+    "scenario": "begin-1-0-ordinary-none-trial_anchor-anniversary_paid_bridge",
+    "paidAt": "2027-01-31T12:00:00.000Z",
+    "enrollmentVariant": "trial_anchor",
+    "timing": "same_second",
+    "subscription": {
+      "id": "sub_1UbFBR2HodUYhbMc0ZR6aumb",
+      "livemode": false,
+      "status": "active",
+      "price": "price_1UbEU12HodUYhbMcs5GQGUYA",
+      "start": "2028-03-31T12:00:00.000Z",
+      "end": "2028-04-30T12:00:00.000Z",
+      "anchor": null,
+      "billingCycleAnchor": "2028-03-31T12:00:00.000Z",
+      "schedule": null,
+      "defaultPaymentMethod": "pm_1UbFBQ2HodUYhbMcjoWlfDu0",
+      "cancelAtPeriodEnd": true,
+      "trialEnd": "2028-03-31T12:00:00.000Z"
+    }
+  },
+  {
+    "kind": "annual",
+    "pass": true,
+    "firstTermStart": "2028-02-29T12:00:00.000Z",
+    "nextTermEnd": "2028-04-30T12:00:00.000Z"
+  }
+]
