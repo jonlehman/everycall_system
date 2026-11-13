@@ -3,17 +3,17 @@ import {getStripe} from './stripe.js';
 import {intakeError,intakeTransaction} from './paidIntake.js';
 import {paidSubscriptionParams,PURCHASE_TERMS_VERSION} from './paidPurchaseContract.js';
 import {calendarMonthBoundary} from '../../../lib/paidBillingCalendar.js';
+import {resolvePaidMoneyEventScope} from './paidMoneyEvents.js';
 const id=value=>typeof value==='string'?value:value?.id;
 
-export async function applyPaidPurchaseEvent(db,event,{stripe=getStripe()}={}) {
+export async function applyPaidPurchaseEvent(db,event,{stripe=getStripe(),moneyScope}={}) {
  const object=event.data?.object||{};
- if(['charge.refunded','charge.dispute.created','charge.dispute.updated','charge.dispute.closed','refund.created','refund.updated','refund.failed'].includes(event.type)) {
-  if(event.livemode!==true)throw intakeError('money_review_mode_mismatch');
-  const charge=object.charge?await stripe.charges.retrieve(id(object.charge)):object;
-  const customerId=id(object.customer)||id(charge.customer)||null;
+ const scope=moneyScope===undefined?await resolvePaidMoneyEventScope(db,event,{stripe}):moneyScope;
+ if(scope) {
+  if(!scope.matched)return true;
   await db.query(`INSERT INTO billing_money_reviews(stripe_event_id,event_type,stripe_object_id,tenant_key,payload_json)
-   VALUES($1,$2,$3,COALESCE((SELECT tenant_key FROM paid_purchases WHERE stripe_payment_intent_id=$4 OR legacy_payment_intent_id=$4 LIMIT 1),(SELECT tenant_key FROM tenant_billing_accounts WHERE stripe_customer_id=$6 LIMIT 1)),$5::jsonb)
-   ON CONFLICT(stripe_event_id) DO NOTHING`,[event.id,event.type,object.id,id(object.payment_intent)||id(charge.payment_intent)||null,JSON.stringify(object),customerId]);
+   VALUES($1,$2,$3,$4,$5::jsonb)
+   ON CONFLICT(stripe_event_id) DO NOTHING`,[event.id,event.type,object.id,scope.tenantKey,JSON.stringify(object)]);
   return true;
  }
  if(!['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)||!object.metadata?.paid_purchase_id)return false;

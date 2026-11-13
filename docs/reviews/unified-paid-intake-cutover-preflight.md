@@ -45,3 +45,24 @@ No executable activation SQL is supplied while those prerequisites remain unreso
 ## Integration verification
 
 The merged checkout passed Sales authentication/isolation, telephony, the compiled Sales gateway suite, the real CallerWorkspace controller browser fixture and the 12-key keypad browser fixture (keyboard focus, serial order, error/call-change teardown and responsive bounds). The contracts and Sales gateway TypeScript builds passed. Paid intake passed all 26 native scenarios; paid lifecycle, guarded migration and paid intake/Billing/booking browser suites passed against disposable local PostgreSQL and synthetic providers. Migration tests exercised real server transaction deadlines, exact fingerprints, contention, atomic rollback, protected-row preservation and disabled-gate behavior. These are integration/local regressions, not live Stripe acceptance or deployed-version proof.
+
+## Shared-account money-event isolation
+
+Provider cutover preparation identified a scope defect: the prior refund/dispute handler persisted unmatched financial payloads with a null tenant, and generic webhook receipts persisted those payloads before classification. The Stripe account serves other businesses. `paidMoneyEvents.js` now resolves the canonical live charge/refund/dispute and trusted local purchase/customer or frozen historical Sales Session association before either ledger stores money-event payloads. Unrelated events return an ignored acknowledgement; provider uncertainty and conflicting associations retry without persisting that payload. Legitimate unconverted purchases retain their manual review even with a null tenant. Historical $1 setup amounts remain frozen. Money events never trigger automatic entitlement changes.
+
+`scripts/validate-paid-money-events.mjs` exercises the actual webhook handler with native transactions: all seven refund/dispute types, unrelated shared-account metadata, preconversion ownership, legacy billing customer, reused historical payment, canonical payment fallback, historical frozen $1 Checkout, mismatches/ambiguity/wrong mode, provider failures, receipt rollback, replay and unchanged tenant entitlement. The affected 26-scenario intake and full billing-lifecycle suites also passed. This fix changes no SQL, price or subscription association and requires independent review of the resulting final commit.
+
+## Authorized inactive catalog staging
+
+After explicit release coordination and independent agreement, six new live recurring Prices were created **inactive** and read back from Stripe. This is the only provider mutation performed in this preflight. No checkout can use an inactive price; this does not activate purchases or establish provider acceptance. Existing prices, subscriptions, portal, webhook, database catalog bindings, environment variables and release gate were not changed.
+
+| Plan | Interval | Amount USD | New inactive Price |
+| --- | --- | --- | --- |
+| Starter | Month | 74.50 | `price_1UbERsFgMKdd4EaWacK0Wdkq` |
+| Starter | Year | 759.90 | `price_1UbES9FgMKdd4EaWCvIKBY5i` |
+| Growth | Month | 124.50 | `price_1UbESFFgMKdd4EaWYw7Hd5aK` |
+| Growth | Year | 1,269.90 | `price_1UbESKFgMKdd4EaWN8rANv77` |
+| Pro | Month | 174.50 | `price_1UbESQFgMKdd4EaWFP3AsKJA` |
+| Pro | Year | 1,779.90 | `price_1UbESVFgMKdd4EaWwFBq2BnM` |
+
+Each receipt verified live mode, inactive state, the existing EveryCall product, exact amount/USD/one licensed interval and unique lookup key `everycall_upib_20261112_live_<plan>_<month|year>`. Private receipt evidence: `/tmp/upib-release-preflight/stripe-inactive-price-receipts.json`. Activation is a separate reviewed step after acceptance; reuse these IDs, never create replacement prices merely to retry the release. The existing canonical webhook API version/query/signing configuration and the unrelated default portal remain unchanged.

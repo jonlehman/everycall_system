@@ -2,6 +2,8 @@
 
 ## Unified paid intake and billing — implementation regressions
 
+`scripts/validate-paid-money-events.mjs` covers UPIB-013/014 shared-Stripe-account refund/dispute isolation through the actual webhook handler and native transactions. It requires `EVERYCALL_TEST_POSTGRES_URL` pointing at disposable loopback PostgreSQL. Verify unrelated financial payloads never enter either webhook or review ledgers; canonical purchase/customer/frozen historical Checkout associations preserve legitimate preconversion and $1 reviews; mismatches, provider uncertainty, replay and transaction rollback preserve entitlement and evidence.
+
 The approved [UPIB-001–014](SPECS/unified-paid-intake-and-billing.md) supersede historical trial, seven-day grace, separate Sales checkout, immediate cancellation and free restart expectations. The [release record](reviews/unified-paid-intake-release.md) maps each requirement to source and tests; the [independent Astra review](reviews/unified-paid-intake-independent-review.md) records unresolved findings and their verification.
 
 - `node --no-warnings scripts/validate-paid-intake.mjs`: native PostgreSQL purchase identity, owner verification, Checkout/provider uncertainty, conversion/worker recovery, subscription consent and paid restart fixtures.

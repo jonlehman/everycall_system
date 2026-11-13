@@ -1,4 +1,5 @@
 import { applyPaidPurchaseEvent } from '../../_lib/paidPurchaseEvents.js';
+import { resolvePaidMoneyEventScope } from '../../_lib/paidMoneyEvents.js';
 import { applyPaidBillingEvent,syncPaidBillingEntitlement } from '../../_lib/paidBillingLifecycle.js';
 import { applySalesPaidCheckout } from "../../_lib/salesCheckout.js";
 import { readRawBody } from "../../_lib/telnyx.js";
@@ -143,6 +144,9 @@ export default async function handler(req, res) {
     verified = true;
     await ensureTables(pool);
 
+    const moneyScope=await boundedProviderRead(()=>resolvePaidMoneyEventScope(database,event));
+    if(moneyScope&&!moneyScope.matched)return res.status(200).json({ok:true,ignored:true});
+
     await applyPaidBillingEvent(database,event);
 
     // Persist a retryable identity, then serialize every effect and the final
@@ -178,7 +182,7 @@ export default async function handler(req, res) {
     const object = event.data?.object || {};
     const metadataTenantKey = String(object.metadata?.tenant_key || object.subscription_details?.metadata?.tenant_key || "").trim() || null;
 
-    const paidPurchaseEvent=await applyPaidPurchaseEvent(pool,event);
+    const paidPurchaseEvent=await applyPaidPurchaseEvent(pool,event,{moneyScope});
     await applySalesPaidCheckout(pool,event);
     if (event.type === "checkout.session.completed" && !object.metadata?.sales_checkout_id && !paidPurchaseEvent) {
       const tenantRow = await getTenantBillingRow(pool, {
@@ -290,7 +294,7 @@ export default async function handler(req, res) {
     await client.query("COMMIT");
     client.release();client=null;
     const paidTenant=(await database.query("SELECT tenant_key FROM tenant_billing_accounts WHERE paid_purchase_id IS NOT NULL AND stripe_customer_id=$1",[typeof object.customer==='string'?object.customer:object.customer?.id||null])).rows[0];
-    if(paidTenant)await syncPaidBillingEntitlement(database,paidTenant.tenant_key);
+    if(paidTenant&&!moneyScope)await syncPaidBillingEntitlement(database,paidTenant.tenant_key);
     return res.status(200).json({ ok: true });
   } catch (err) {
     if (client) {

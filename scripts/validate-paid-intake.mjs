@@ -119,7 +119,7 @@ try {
  assert.equal(restartJobs.results[0].status,'awaiting_knowledge_review');
  const restarted=(await pool.query('SELECT * FROM tenant_billing_accounts WHERE tenant_key=$1',[converted.tenant_key])).rows[0];
  assert.equal(restarted.initial_period_end,null);assert.equal(restarted.service_ended_at,null);assert.equal(new Date(restarted.paid_base_through).getTime(),calendarMonthBoundary(restartAt,12).getTime());check();
- await intakeTransaction(pool,db=>applyPaidPurchaseEvent(db,{id:'evt_refund',livemode:true,type:'charge.refunded',data:{object:{id:'ch_setup',payment_intent:'pi_setup',amount_refunded:50}}},{stripe}));
+ await intakeTransaction(pool,db=>applyPaidPurchaseEvent(db,{id:'evt_refund',livemode:true,type:'charge.refunded',data:{object:{id:'ch_setup',payment_intent:'pi_setup',amount_refunded:50}}},{stripe:{...stripe,charges:{retrieve:async()=>({id:'ch_setup',livemode:true,payment_intent:'pi_setup',customer:checkout.customer,amount_refunded:50})}}}));
  assert.equal((await pool.query('SELECT review_status FROM billing_money_reviews')).rows[0].review_status,'pending');assert.equal((await pool.query('SELECT payment_status FROM paid_purchases WHERE purchase_id=$1',[paid.purchase_id])).rows[0].payment_status,'paid');check();
 
  await pool.query("INSERT INTO admin_users(id,username,email,role) VALUES(110,'sales_fixture','sales@fixture.invalid','sales')");
