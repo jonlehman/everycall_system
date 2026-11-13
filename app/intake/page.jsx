@@ -11,6 +11,8 @@ const PLANS = {
   pro: { name: 'Pro', calls: 100, overage: '$1.75', monthly: '$174.50', annual: '$1,779.90' }
 };
 const EMPTY = { businessName: '', website: '', businessCategory: '', loginEmail: '', leadPhone: '', companyDescription: '', planCode: '', billingInterval: '' };
+const purchaseNeedsReview = (purchase) => String(purchase?.provisioningStatus || '').endsWith('_review');
+const REVIEW_MESSAGE = 'Contact customerservice@everycall.io to review your existing signup. Do not make another payment while we check it.';
 async function request(url, body) {
   const response = await fetch(url, { cache: 'no-store', ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
   const data = await response.json().catch(() => ({}));
@@ -38,10 +40,10 @@ export function IntakePageClient() {
   const [loginRequired, setLoginRequired] = useState(false);
   const [loginHref, setLoginHref] = useState('/login?next=%2Fintake');
   const plan = PLANS[form.planCode];
-  const paid = purchase?.paymentStatus === 'paid' && Boolean(quote && !quote.requiresRecurringConsent);
-  const setupProgress = String(purchase?.provisioningStatus || '').endsWith('_review')
-    ? 'Setup needs manual review. Please contact customerservice@everycall.io; your verified payment is saved.'
-    : {
+  const paymentVerified = purchase?.paymentStatus === 'paid';
+  const paid = paymentVerified && Boolean(quote && !quote.requiresRecurringConsent);
+  const needsReview = purchaseNeedsReview(purchase);
+  const setupProgress = {
     queued: 'Your account is waiting for setup.',
     processing: 'We are preparing your account.',
     failed: 'Setup needs attention. Your verified payment is saved.',
@@ -77,7 +79,7 @@ export function IntakePageClient() {
       setVerified(Boolean(data.verified));
       setPurchase(data.purchase || null);
       setQuote(data.quote || null);
-      setMessage(data.verified ? 'Owner email verified. Refresh your payment summary, then review and accept recurring billing before Go.' : 'Choose your plan and verify your owner email to continue.');
+      setMessage(purchaseNeedsReview(data.purchase) ? REVIEW_MESSAGE : data.verified ? 'Owner email verified. Refresh your payment summary, then review and accept recurring billing before Go.' : 'Choose your plan and verify your owner email to continue.');
       if (data.redirectUrl && data.purchase?.paymentStatus === 'paid') window.location.assign(data.redirectUrl);
     };
     async function load() {
@@ -112,6 +114,7 @@ export function IntakePageClient() {
       void request('/api/v1/intake/status').then((data) => {
         if (!active) return;
         setPurchase(data.purchase || null);
+        if (purchaseNeedsReview(data.purchase)) setMessage(REVIEW_MESSAGE);
         if (data.redirectUrl && data.purchase?.paymentStatus === 'paid') window.location.assign(data.redirectUrl);
       }).catch(() => {});
     }, 5000);
@@ -130,6 +133,7 @@ export function IntakePageClient() {
 
   async function submit(event) {
     event.preventDefault();
+    if (needsReview) { setError(true); setMessage(REVIEW_MESSAGE); return; }
     if (!plan || !['month', 'year'].includes(form.billingInterval)) { setError(true); setMessage('Select a plan and billing interval.'); return; }
     if (verified && (!quote?.token || quote.ready === false || !consentAccepted)) { setError(true); setMessage('Review your payment and accept the recurring billing terms before Go.'); return; }
     setBusy(true); setError(false); setMessage(verified ? 'Checking your purchase securely…' : 'Sending your owner verification link…');
@@ -152,7 +156,7 @@ export function IntakePageClient() {
         <form className="intake-card" onSubmit={submit}>
           <div role={error ? 'alert' : 'status'} aria-live="polite" className={`intake-status ${error ? 'bad' : 'normal'}`}>{message}</div>
           {loginRequired ? <p><a href={loginHref}>Sign in to verify your existing owner account</a></p> : null}
-          {paid ? <section><h2>Payment verified — setup in progress</h2><p>{setupProgress} Production calls begin after knowledge and phone setup are ready.</p>{purchase.tenantKey ? <a href="/client/account/billing">Open Billing and setup progress</a> : <p>You can keep this page open or contact customerservice@everycall.io for help. Your verified purchase is retained.</p>}</section> : null}
+          {needsReview ? <section aria-label="Signup review"><h2>{paymentVerified ? 'Payment verified — review needed' : 'Signup needs review'}</h2><p>Contact <a href="mailto:customerservice@everycall.io">customerservice@everycall.io</a> to review your existing signup. Do not make another payment while we check it.</p>{purchase.tenantKey ? <a href="/client/account/billing">Open Billing and setup progress</a> : null}</section> : paid ? <section><h2>Payment verified — setup in progress</h2><p>{setupProgress} Production calls begin after knowledge and phone setup are ready.</p>{purchase.tenantKey ? <a href="/client/account/billing">Open Billing and setup progress</a> : <p>You can keep this page open or contact customerservice@everycall.io for help. Your verified purchase is retained.</p>}</section> : null}
           <div className="intake-form-stack">
             <div className="intake-stack"><label htmlFor="business-name">Business name</label><input id="business-name" required autoComplete="organization" value={form.businessName} onChange={(e) => update('businessName', e.target.value)} /></div>
             <div className="intake-stack"><label htmlFor="website">Business website (optional)</label><input id="website" autoComplete="url" placeholder="https://example.com" value={form.website} onChange={(e) => update('website', e.target.value)} /><p className="intake-muted">No website? We can help with setup after payment.</p></div>
@@ -160,13 +164,13 @@ export function IntakePageClient() {
             <div className="intake-stack"><label htmlFor="lead-phone">Mobile number for lead alerts (optional)</label><input id="lead-phone" type="tel" autoComplete="tel" value={form.leadPhone} onChange={(e) => update('leadPhone', e.target.value)} /><p className="intake-muted">Text alerts require confirmation. Reply STOP to opt out.</p></div>
             <fieldset className="intake-plan-options"><legend>Choose your plan</legend>{Object.entries(PLANS).map(([code, item]) => <label key={code} className="intake-checkbox-card"><input type="radio" name="plan" required checked={form.planCode === code} onChange={() => update('planCode', code)} /><span><strong>{item.name}</strong> — {item.calls} calls each month; {item.overage} per additional billable call, billed monthly.<br />Later base: {item.monthly}/month or {item.annual}/year.</span></label>)}</fieldset>
             <fieldset className="intake-plan-options"><legend>Choose your later base billing interval</legend><label className="intake-checkbox-card"><input type="radio" name="interval" required checked={form.billingInterval === 'month'} onChange={() => update('billingInterval', 'month')} />Monthly</label><label className="intake-checkbox-card"><input type="radio" name="interval" required checked={form.billingInterval === 'year'} onChange={() => update('billingInterval', 'year')} />Annual — save 15% on base service</label></fieldset>
-            {plan && form.billingInterval ? <section className="intake-purchase-review" aria-label="Purchase summary"><h2>Review before Go</h2><p><strong>{plan.name} · {form.billingInterval === 'year' ? 'Annual' : 'Monthly'} · {verified ? quote ? `${dueNow} due now` : 'Checking your purchase…' : '$100 due now'}</strong></p>{verified && quote?.isLiveTest ? <p><strong>Authorized $1 live test — this is a real charge.</strong></p> : null}{verified && quote?.kind === 'consent' ? <p>Your verified setup payment is retained. Complete payment-method and recurring consent setup without another setup charge.</p> : null}<p>Your first calendar month starts on successful payment and includes {plan.calls} calls. Additional billable calls cost {plan.overage} each, billed monthly, including the first month and every month on annual billing.</p><p>At the end of that first calendar month, {form.billingInterval === 'year' ? `${plan.annual} is due for the following 12 months, renewing yearly` : `${plan.monthly} is due, renewing monthly`}. Your call allowance resets monthly with no carryover.</p><p>Plan changes and cancellation take effect at the paid term’s end. Refund or dispute assistance: <a href="mailto:customerservice@everycall.io">customerservice@everycall.io</a>.</p></section> : null}
+            {plan && form.billingInterval && !needsReview ? <section className="intake-purchase-review" aria-label="Purchase summary"><h2>Review before Go</h2><p><strong>{plan.name} · {form.billingInterval === 'year' ? 'Annual' : 'Monthly'} · {verified ? quote ? `${dueNow} due now` : 'Checking your purchase…' : '$100 due now'}</strong></p>{verified && quote?.isLiveTest ? <p><strong>Authorized $1 live test — this is a real charge.</strong></p> : null}{verified && quote?.kind === 'consent' ? <p>Your verified setup payment is retained. Complete payment-method and recurring consent setup without another setup charge.</p> : null}<p>Your first calendar month starts on successful payment and includes {plan.calls} calls. Additional billable calls cost {plan.overage} each, billed monthly, including the first month and every month on annual billing.</p><p>At the end of that first calendar month, {form.billingInterval === 'year' ? `${plan.annual} is due for the following 12 months, renewing yearly` : `${plan.monthly} is due, renewing monthly`}. Your call allowance resets monthly with no carryover.</p><p>Plan changes and cancellation take effect at the paid term’s end. Refund or dispute assistance: <a href="mailto:customerservice@everycall.io">customerservice@everycall.io</a>.</p></section> : null}
           </div>
-          {verified && !paid ? <button type="button" disabled={busy || !plan || !form.billingInterval} onClick={refreshPaymentSummary}>Refresh payment summary</button> : null}
+          {verified && !paid && !needsReview ? <button type="button" disabled={busy || !plan || !form.billingInterval} onClick={refreshPaymentSummary}>Refresh payment summary</button> : null}
           {verified && quote?.ready === false ? <p role="status">An earlier payment link is still being checked. Contact customerservice@everycall.io for secure recovery before making another payment.</p> : null}
-          {verified && plan && quote ? <label className="intake-checkbox-card" htmlFor="recurring-consent"><input id="recurring-consent" type="checkbox" required checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} disabled={busy || paid} /><span>I agree to {form.billingInterval === 'year' ? `${plan.annual} per year` : `${plan.monthly} per month`} after the included first calendar month, with {plan.calls} included calls each month and {plan.overage} per additional billable call, billed monthly. My subscription renews until canceled at its term end.</span></label> : null}
-          <div className="intake-actions"><button className="btn primary" type="submit" disabled={busy || paid || (verified && (!quote?.token || quote.ready === false || !consentAccepted))}>{busy ? 'Please wait…' : verified ? 'Go' : 'Verify owner email'}</button></div>
-          <p className="intake-muted">Go opens secure payment and recurring subscription consent. A payment return link does not confirm payment. Existing verified purchases are checked before collecting setup again.</p>
+          {verified && plan && quote && !needsReview ? <label className="intake-checkbox-card" htmlFor="recurring-consent"><input id="recurring-consent" type="checkbox" required checked={consentAccepted} onChange={(event) => setConsentAccepted(event.target.checked)} disabled={busy || paid} /><span>I agree to {form.billingInterval === 'year' ? `${plan.annual} per year` : `${plan.monthly} per month`} after the included first calendar month, with {plan.calls} included calls each month and {plan.overage} per additional billable call, billed monthly. My subscription renews until canceled at its term end.</span></label> : null}
+          <div className="intake-actions"><button className="btn primary" type="submit" disabled={busy || paid || needsReview || (verified && (!quote?.token || quote.ready === false || !consentAccepted))}>{busy ? 'Please wait…' : verified ? 'Go' : 'Verify owner email'}</button></div>
+          <p className="intake-muted">{needsReview ? "You can return to this page to check review status. Contact support before making another payment." : "Go opens secure payment and recurring subscription consent. A payment return link does not confirm payment. Existing verified purchases are checked before collecting setup again."}</p>
         </form>
       </div></main>
     </div>
