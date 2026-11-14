@@ -1090,3 +1090,12 @@
 }
 .contactPicker select:disabled { pointer-events: none; }
 
+
+.reporting {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.reporting input { width: 100%; }

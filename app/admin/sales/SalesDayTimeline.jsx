@@ -13,7 +13,7 @@ function callDescription(call) {
   return `${call.businessName || call.id} · ${call.id} · ${call.startSource}: ${pacific(call.at)} · ${call.valid ? `End: ${pacific(call.end)} · Provider interval: ${duration((call.end - call.at) / 1000)}` : call.endedAt ? 'Incomplete or invalid timing; duration unknown' : 'End not recorded; duration unknown'}`;
 }
 
-export default function SalesDayTimeline({ filters, snapshot }) {
+export default function SalesDayTimeline({ filters, snapshot, endpoint = '/api/v1/admin/sales/reports', selfOnly = false, onUnauthorized }) {
   const filterKey = new URLSearchParams({ ...filters, ...(snapshot ? { snapshot } : {}) }).toString();
   const [selection, setSelection] = useState(null), [result, setResult] = useState(null), [failure, setFailure] = useState(null);
   const [zoom, setZoom] = useState('fit');
@@ -21,11 +21,11 @@ export default function SalesDayTimeline({ filters, snapshot }) {
   const requestKey = `${filterKey}&view=timeline${selected ? `&day=${selected}` : ''}`;
   useEffect(() => {
     let active = true;
-    fetchSalesJson(`/api/v1/admin/sales/reports?${requestKey}`)
+    fetchSalesJson(`${endpoint}?${requestKey}`)
       .then(data => { if (active) { setResult({ key: requestKey, data }); setFailure(null); } })
-      .catch(error => { if (active) setFailure({ key: requestKey, message: error.message }); });
+      .catch(error => { if (active) { setResult(null); setFailure({ key: requestKey, message: error.message }); if ([401, 403].includes(error.status)) onUnauthorized?.(); } });
     return () => { active = false; };
-  }, [requestKey, filters]);
+  }, [requestKey, filters, endpoint, onUnauthorized]);
   const data = result?.key === requestKey ? result.data : null;
   const error = failure?.key === requestKey ? failure.message : '';
   // Retain the available options while a newly selected day is loading.
@@ -54,7 +54,7 @@ export default function SalesDayTimeline({ filters, snapshot }) {
     {data?.coverage ? <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-700" role="status">
       <strong>{['available', 'partial'].includes(data.coverage.status) ? 'Source: Telnyx' : 'Telnyx records unavailable'}</strong>
       {data.coverage.retrievedAt ? <> · Retrieved {pacific(data.coverage.retrievedAt)}</> : null}
-      <p className="mt-1">All returned pages retrieved · {data.calls.length} matching provider records on this day · {data.coverage.unmatchedRecords} unmatched and {data.coverage.ambiguousRecords} ambiguous identities in the source window · {data.coverage.excludedOperatorAiRecords} known operator/AI records excluded.</p>
+      {selfOnly ? <p className="mt-1">{data.calls.length} of your matching provider records on this day. Unknown or ambiguous ownership is excluded.</p> : <p className="mt-1">All returned pages retrieved · {data.calls.length} matching provider records on this day · {data.coverage.unmatchedRecords} unmatched and {data.coverage.ambiguousRecords} ambiguous identities in the source window · {data.coverage.excludedOperatorAiRecords} known operator/AI records excluded.</p>}
       <p className="mt-1">{data.coverage.limits}</p>
       {data.coverage.gapsAvailable === false ? <p className="mt-1 font-medium">Gap estimates withheld: provider retention, finalization and unclassified identities do not establish complete calling coverage.</p> : null}
     </div> : null}

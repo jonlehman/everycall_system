@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { fetchSalesJson, displayStatus } from './salesApi';
 import { Card, Field, TextInput, ActionButton, ErrorNotice } from './SalesUi';
 import { SALES_REPORT_FIELDS, SALES_REPORT_EXPORT_LIMIT } from '../../../lib/salesReportFields';
@@ -72,43 +72,49 @@ function CallDetails({ call }) {
   </dl></section>)}</div>;
 }
 
-export default function SalesReports() {
+export default function SalesReports({ endpoint = '/api/v1/admin/sales/reports', selfOnly = false }) {
   const [filters, setFilters] = useState(() => ({ from: new Date(Date.parse(dateLabel(Date.now())) - 29 * 86400000).toISOString().slice(0, 10), to: dateLabel(Date.now()), operator: '', range: 'dates', direction: 'all', status: '', search: '', contract: 'telnyx-v1' }));
   const [applied, setApplied] = useState(filters), [cursor, setCursor] = useState(''), [history, setHistory] = useState([]);
   const [report, setReport] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null), [exporting, setExporting] = useState(false), [exportError, setExportError] = useState('');
   const [reps, setReps] = useState([]);
-  const pinnedSnapshot = useRef(null);
+  const pinnedSnapshot = useRef(null), exportRequest = useRef(null), mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; exportRequest.current?.abort(); }; }, []);
   useEffect(() => {
     let active = true;
     setLoading(true); setError(''); setExpanded(null);
-    fetchSalesJson(`/api/v1/admin/sales/reports?${new URLSearchParams({ ...applied, cursor, ...(pinnedSnapshot.current ? { snapshot: pinnedSnapshot.current } : {}) })}`)
+    fetchSalesJson(`${endpoint}?${new URLSearchParams({ ...applied, cursor, ...(pinnedSnapshot.current ? { snapshot: pinnedSnapshot.current } : {}) })}`)
       .then(data => { if (active) { setReport(data); setReps(data.reps); pinnedSnapshot.current = data.snapshot; } })
-      .catch(cause => { if (active) { setError(cause.message); setReport(null); } })
+      .catch(cause => { if (active) { setError(cause.message); setReport(null); setReps([]); pinnedSnapshot.current = null; } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [applied, cursor]);
+  }, [applied, cursor, endpoint]);
+  const clearUnauthorized = useCallback(() => { setReport(null); setReps([]); pinnedSnapshot.current = null; setError('Your session has ended. Sign in again to view reporting.'); }, []);
   const update = (key, value) => setFilters(previous => ({ ...previous, [key]: value }));
   async function downloadCsv() {
     setExporting(true); setExportError('');
+    const controller = new AbortController(); exportRequest.current = controller;
     try {
-      const response = await fetch(`/api/v1/admin/sales/reports?${new URLSearchParams({ ...applied, snapshot: report.snapshot, format: 'csv' })}`, { credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) { const data = await response.json(); throw new Error(data.message || 'Export unavailable. Please try again.'); }
-      const url = URL.createObjectURL(await response.blob()), link = document.createElement('a');
+      const response = await fetch(`${endpoint}?${new URLSearchParams({ ...applied, snapshot: report.snapshot, format: 'csv' })}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+      if (!mounted.current || controller.signal.aborted) return;
+      if (!response.ok) { const data = await response.json(); if ([401, 403].includes(response.status)) clearUnauthorized(); throw new Error(data.message || 'Export unavailable. Please try again.'); }
+      const blob = await response.blob();
+      if (!mounted.current || controller.signal.aborted) return;
+      const url = URL.createObjectURL(blob), link = document.createElement('a');
       link.href = url; link.download = 'telnyx-sales-records.csv'; document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (cause) { setExportError(cause.message); }
-    finally { setExporting(false); }
+    } catch (cause) { if (mounted.current && !controller.signal.aborted) setExportError(cause.message); }
+    finally { if (mounted.current) setExporting(false); }
   }
   const durationRows = report ? [['underMinute', 'Under 1 min'], ['oneToThree', '1–3 min'], ['threeToTen', '3–10 min'], ['tenPlus', '10+ min'], ['unknown', 'Unknown']].map(([key, label]) => ({ label, count: report.durations[key] })) : [];
   return <div className="grid min-w-0 grid-cols-1 gap-4">
     <Card>
-      <h2 className="m-0 text-lg font-semibold">Telnyx Sales call report</h2>
+      <h2 className="m-0 text-lg font-semibold">{selfOnly ? 'Your Telnyx Sales call report' : 'Telnyx Sales call report'}</h2>
       <p className="mt-1 text-sm text-slate-500">All call facts, totals, charts and exports come from Telnyx call-control detail records for the Sales application. Dates and displayed times are Pacific (PST/PDT). EveryCall supplies rep and business labels only through exact saved provider identities.</p>
       <form onSubmit={event => { event.preventDefault(); pinnedSnapshot.current = null; setCursor(''); setHistory([]); setApplied({ ...filters, search: filters.search.trim() }); setExportError(''); }} className="mt-4 grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="From (Pacific)"><TextInput type="date" required value={filters.from} onChange={event => update('from', event.target.value)} /></Field>
         <Field label="Through (Pacific)"><TextInput type="date" required min={filters.from} value={filters.to} onChange={event => update('to', event.target.value)} /></Field>
-        <Field label="Sales rep · EveryCall label"><select className={selectClass} value={filters.operator} onChange={event => update('operator', event.target.value)}><option value="">All reps and unassigned</option>{reps.map(rep => <option key={rep.id} value={rep.id}>{rep.name}</option>)}<option value="unassigned">Unassigned / unclassified</option></select></Field>
+        {selfOnly ? <p className="text-sm text-slate-700"><strong>Your report</strong> · Only calls matched to your original call identity.</p> : <Field label="Sales rep · EveryCall label"><select className={selectClass} value={filters.operator} onChange={event => update('operator', event.target.value)}><option value="">All reps and unassigned</option>{reps.map(rep => <option key={rep.id} value={rep.id}>{rep.name}</option>)}<option value="unassigned">Unassigned / unclassified</option></select></Field>}
         <Field label="Telnyx direction"><select className={selectClass} value={filters.direction} onChange={event => update('direction', event.target.value)}><option value="all">All directions</option><option value="outbound">Outbound</option><option value="inbound">Inbound</option><option value="unknown">Unknown</option></select></Field>
         <Field label="Telnyx flag status"><select className={selectClass} value={filters.status} onChange={event => update('status', event.target.value)}><option value="">All statuses</option>{['completed', 'connected_not_completed', 'attempted_not_connected', 'not_attempted', 'unknown'].map(value => <option key={value} value={value}>{displayStatus(value)}</option>)}</select></Field>
         <Field label="Search provider records"><TextInput type="search" maxLength={120} placeholder="Business label, provider number or ID" value={filters.search} onChange={event => update('search', event.target.value)} /></Field>
@@ -117,9 +123,9 @@ export default function SalesReports() {
       <p className="mt-3 text-xs text-slate-500">Select any historical window of up to 31 days; provider retention is not guaranteed. Default: last 30 Pacific dates. Retrieval is bounded to 40 pages / 2,000 raw provider records, including operator/AI legs before exclusion; narrow dates if exceeded. CSV contains the full filtered cohort, up to {number(SALES_REPORT_EXPORT_LIMIT)} records, with UTC source timestamps. App outcomes, notes, demos, payments, test/live classification and transcripts are not Telnyx facts and are not part of this report.</p>
     </Card>
     <ErrorNotice title="Report unavailable" message={error} /><ErrorNotice title="Export unavailable" message={exportError} />
-    {report && !error && report.filters.from === applied.from && report.filters.to === applied.to && report.filters.operator === applied.operator && report.filters.direction === applied.direction && report.filters.status === applied.status && report.filters.search === applied.search ? <SalesDayTimeline filters={applied} snapshot={report.snapshot} /> : null}
+    {report && !error && report.filters.from === applied.from && report.filters.to === applied.to && (selfOnly || report.filters.operator === applied.operator) && report.filters.direction === applied.direction && report.filters.status === applied.status && report.filters.search === applied.search ? <SalesDayTimeline filters={applied} snapshot={report.snapshot} endpoint={endpoint} selfOnly={selfOnly} onUnauthorized={clearUnauthorized} /> : null}
     {loading ? <p role="status" className="text-sm text-slate-500">Loading Telnyx records…</p> : report ? <>
-      <Card><div role="status" className="text-sm text-slate-700"><strong>Source: Telnyx · {report.filters.from} through {report.filters.to} (Pacific)</strong><p className="mt-2">Retrieved {pacific(report.coverage.retrievedAt)} · {number(report.coverage.pagesRead)} pages · {number(report.coverage.providerRecords)} raw provider records · {number(report.coverage.excludedOperatorAiRecords)} known operator/AI records excluded · {number(report.coverage.excludedConnectionRecords)} records outside the Sales application excluded.</p><p className="mt-2">Before rep/status/search filtering: {number(report.coverage.matchedRecords)} records matched by exact prospect identities, {number(report.coverage.unmatchedRecords)} unmatched, {number(report.coverage.ambiguousRecords)} ambiguous, {number(report.coverage.relatedRecords)} in sessions with multiple records. Unmatched or ambiguous identities remain unassigned; their role is unclassified.</p><p className="mt-2">{report.coverage.limits} Complete retrieval means all pages returned for this query, not complete historical calling coverage. Missing records do not establish inactivity or breaks.</p><details className="mt-2 text-xs"><summary className="cursor-pointer">Source identifiers</summary><p className="break-all">Sales connection: {report.coverage.connectionId}<br />Dataset: {report.snapshot}</p></details></div></Card>
+      <Card><div role="status" className="text-sm text-slate-700"><strong>Source: Telnyx · {report.filters.from} through {report.filters.to} (Pacific)</strong>{selfOnly ? <p className="mt-2">Retrieved {pacific(report.coverage.retrievedAt)} · {number(report.coverage.matchedRecords)} records matched to your original calls before status/search filtering. Unknown or ambiguous ownership is excluded.</p> : <><p className="mt-2">Retrieved {pacific(report.coverage.retrievedAt)} · {number(report.coverage.pagesRead)} pages · {number(report.coverage.providerRecords)} raw provider records · {number(report.coverage.excludedOperatorAiRecords)} known operator/AI records excluded · {number(report.coverage.excludedConnectionRecords)} records outside the Sales application excluded.</p><p className="mt-2">Before rep/status/search filtering: {number(report.coverage.matchedRecords)} records matched by exact prospect identities, {number(report.coverage.unmatchedRecords)} unmatched, {number(report.coverage.ambiguousRecords)} ambiguous, {number(report.coverage.relatedRecords)} in sessions with multiple records. Unmatched or ambiguous identities remain unassigned; their role is unclassified.</p></>}<p className="mt-2">{report.coverage.limits} Complete retrieval means all pages returned for this query, not complete historical calling coverage. Missing records do not establish inactivity or breaks.</p><details className="mt-2 text-xs"><summary className="cursor-pointer">Source identifiers</summary><p className="break-all">{!selfOnly ? <>Sales connection: {report.coverage.connectionId}<br /></> : null}Dataset: {report.snapshot}</p></details></div></Card>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{METRICS.map(([key, label]) => <Card key={key}><div className="text-sm text-slate-500">{label}</div><div className="mt-2 text-3xl font-semibold tabular-nums">{number(report.totals[key])}</div>{['connected', 'completed'].includes(key) ? <p className="mt-1 text-xs text-slate-500">Provider flag true · {number(report.totals[`${key}Unknown`])} unknown</p> : null}</Card>)}</div>
       <p className="text-xs text-slate-500">{number(report.totals.attempted)} records have attempted=true; {number(report.totals.attemptedUnknown)} unknown. Records count individual CDRs. Unique sessions count distinct Telnyx session IDs, which can contain multiple legs/records. No count establishes distinct people, sales results or work time.</p>
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">

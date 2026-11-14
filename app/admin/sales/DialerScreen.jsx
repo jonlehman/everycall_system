@@ -20,6 +20,7 @@ import InCallKeypad from "./InCallKeypad";
 import { canSendSalesDtmf } from "../../../lib/salesDtmf.js";
 import CallbackPicker from "./CallbackPicker";
 import AddContactForm from "./AddContactForm";
+import SalesReports from "./SalesReports";
 import ContactsScreen, { contactStatus } from "./ContactsScreen";
 import { savedNoteHistory } from "./salesNoteHistory.mjs";
 import { companyBriefFailureMessage, companyBriefAttemptMetadata } from "../../../lib/salesCompanyBriefDiagnostics.js";
@@ -184,6 +185,7 @@ export default function DialerScreen({
   searchResults,
   onSearch,
   onSignOut,
+  signingOut = false,
   view = "dial",
   onNavigate,
   onSelectContact,
@@ -297,7 +299,8 @@ export default function DialerScreen({
           <span>E</span>EveryCall Sales
           <nav className={styles.navigation} aria-label="Main">
             <HintButton type="button" aria-current={view === "dial" && !browsingContact ? "page" : undefined} onClick={() => onNavigate?.("dial")}>Dial</HintButton>
-            <HintButton type="button" aria-current={view === "contacts" || browsingContact ? "page" : undefined} disabled={Boolean(call?.id) || Boolean(busy)} disabledReason={disabledReasons(call?.id && "Finish the current call and save its outcome before opening Contacts.", busy && busyReason)} onClick={() => onNavigate?.("contacts")}>Contacts</HintButton>
+            <HintButton type="button" aria-current={view === "contacts" || (browsingContact && view !== "reporting") ? "page" : undefined} disabled={Boolean(call?.id) || Boolean(busy)} disabledReason={disabledReasons(call?.id && "Finish the current call and save its outcome before opening Contacts.", busy && busyReason)} onClick={() => onNavigate?.("contacts")}>Contacts</HintButton>
+            <HintButton type="button" disabled={signingOut} disabledReason="Signing out." aria-current={view === "reporting" ? "page" : undefined} onClick={() => onNavigate?.("reporting")}>Reporting</HintButton>
           </nav>
         </div>
         <div className={styles.counters}>
@@ -415,7 +418,7 @@ export default function DialerScreen({
           )}
         </div>
       )}
-      {view === "contacts" ? <ContactsScreen onSelect={onSelectContact} onAdd={onAddContact} busy={Boolean(busy)} phoneTestMode={Boolean(queue.config?.phoneTestMode)} /> : <div className={styles.body}>
+      {view === "reporting" ? <section aria-label="Your Sales reporting" className={styles.reporting}>{!signingOut ? <SalesReports endpoint="/api/v1/sales/reports" selfOnly /> : <p role="status">Signing out…</p>}</section> : view === "contacts" ? <ContactsScreen onSelect={onSelectContact} onAdd={onAddContact} busy={Boolean(busy)} phoneTestMode={Boolean(queue.config?.phoneTestMode)} /> : <div className={styles.body}>
         <aside className={styles.prospect}>
           {(queue.returnItems || []).map((item) => (
             <ReturnWorkItem key={item.incomingId} item={item} busy={busy} onPrepare={onPrepareReturn} />

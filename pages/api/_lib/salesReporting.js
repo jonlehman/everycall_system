@@ -103,29 +103,44 @@ async function enrichProviderRecords(pool, provider) {
   return { rows, excludedOperatorAiRecords, excludedConnectionRecords };
 }
 
-async function cohort(pool, query, { loadProvider = getSalesTelnyxRecords } = {}) {
+async function cohort(pool, query, options = {}) {
+  const { loadProvider = getSalesTelnyxRecords, actorId } = options;
+  const self = Object.prototype.hasOwnProperty.call(options, 'actorId');
+  // actorId is an authenticated server option, never a client filter.
+  if (self && (!Number.isSafeInteger(actorId) || actorId <= 0)) throw salesError('forbidden', 'Report access unavailable.', 403);
   const filters = salesReportFilters(query), paging = pageOptions(query);
+  if (self) filters.operator = String(actorId);
   const bounds = (await pool.query(`SELECT $1::date::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayStart",
     ($2::date + 1)::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayEnd"`, [filters.from, filters.to])).rows[0];
   const provider = await loadProvider(bounds);
   if (provider.status !== 'available' || !provider.paginationComplete) throw salesError('telnyx_records_unavailable',
-    `Telnyx records unavailable or incomplete (${provider.reason || 'incomplete_retrieval'}). Narrow the dates or retry. No partial totals or internal records are substituted.`, 503);
+    self ? 'Telnyx records unavailable or incomplete. Narrow the dates or retry. No partial totals are shown.' : `Telnyx records unavailable or incomplete (${provider.reason || 'incomplete_retrieval'}). Narrow the dates or retry. No partial totals or internal records are substituted.`, 503);
   const enriched = await enrichProviderRecords(pool, provider);
   const matches = row => (!filters.operator || (filters.operator === 'unassigned' ? row.operatorId === null : String(row.operatorId) === filters.operator))
     && (filters.direction === 'all' || (row.direction || 'unknown') === filters.direction)
     && (!filters.status || row.status === filters.status)
     && (!filters.search || [row.id, row.providerLegId, row.providerSessionId, row.businessName, row.callerNumber, row.destinationNumber, row.callerName].some(value => String(value || '').toLowerCase().includes(filters.search.toLowerCase())));
-  const all = enriched.rows.sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
+  const authorized = self ? enriched.rows.filter(row => row.classification === 'matched_prospect' && row.operatorId === actorId) : enriched.rows;
+  if (self) {
+    const counts = new Map();
+    authorized.forEach(row => counts.set(row.providerSessionId, (counts.get(row.providerSessionId) || 0) + 1));
+    authorized.forEach(row => { row.relatedLeg = counts.get(row.providerSessionId) > 1; });
+  }
+  const all = authorized.sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
   // Exclude retrieval time from identity: identical re-reads can safely continue.
   // Include the entire provider and enrichment dataset, even records hidden by filters.
-  const snapshot = digest({ filters, connectionId: provider.connectionId, excluded: [enriched.excludedOperatorAiRecords, enriched.excludedConnectionRecords],
+  const snapshot = self ? digest({ audience: 'sales-self', actorId, filters, rows: all.map(({ retrievedAt, ...row }) => row) }) : digest({ filters, connectionId: provider.connectionId, excluded: [enriched.excludedOperatorAiRecords, enriched.excludedConnectionRecords],
     records: provider.records, rows: all.map(({ retrievedAt, ...row }) => row) });
   if ((paging.cursor && paging.cursor.snapshot !== snapshot) || (query.snapshot && query.snapshot !== snapshot)) throw stale();
   all.forEach(row => { row.snapshot = snapshot; });
   const filtered = all.filter(matches);
   const rows = filtered.filter(row => Date.parse(row.startedAt) >= Date.parse(bounds.dayStart));
   const reps = [...new Map(all.filter(row => row.operatorId !== null).map(row => [row.operatorId, { id: row.operatorId, name: row.operatorName }])).values()].sort((a, b) => a.name.localeCompare(b.name));
-  const coverage = { source: 'telnyx', status: 'available', paginationComplete: true, retrievedAt: provider.retrievedAt,
+  const coverage = self ? { source: 'telnyx', status: 'available', paginationComplete: true, retrievedAt: provider.retrievedAt,
+    matchedRecords: all.length, relatedRecords: all.filter(row => row.relatedLeg).length, filteredRecords: rows.length,
+    overlapRecords: filtered.length - rows.length, gapsAvailable: false, audience: 'self',
+    scope: 'Only records matched to your original Sales call identity.', limits: provider.limits, snapshot, timeZone: ZONE
+  } : { source: 'telnyx', status: 'available', paginationComplete: true, retrievedAt: provider.retrievedAt,
     connectionId: provider.connectionId, pagesRead: provider.pagesRead, providerRecords: provider.records.length,
     excludedOperatorAiRecords: enriched.excludedOperatorAiRecords, excludedConnectionRecords: enriched.excludedConnectionRecords,
     matchedRecords: all.filter(row => row.classification === 'matched_prospect').length,
@@ -189,7 +204,7 @@ export async function getSalesReportDay(pool, query = {}, options) {
     ($1::date + 1)::timestamp AT TIME ZONE 'America/Los_Angeles' AS "dayEnd"`, [day])).rows[0];
   const calls = data.filtered.filter(row => Date.parse(row.startedAt) < Date.parse(bounds.dayEnd)
     && (Date.parse(row.startedAt) >= Date.parse(bounds.dayStart) || Date.parse(row.endedAt) > Date.parse(bounds.dayStart))).map(publicRow);
-  return { filters, from: filters.from, to: filters.to, day, ...bounds, timeZone: ZONE, calls,
+  return { filters: data.filters, from: filters.from, to: filters.to, day, ...bounds, timeZone: ZONE, calls,
     prior: [...new Set(calls.map(row => row.operatorId))].map(operatorId => ({ operatorId, uncertain: true })),
     coverage: { ...data.coverage, matchedRecords: calls.length, currentDay: Date.parse(bounds.dayEnd) > Date.parse(data.coverage.retrievedAt),
       missingSessions: null }, snapshot: data.snapshot, missing: [], unresolved: [], unmatched: [] };

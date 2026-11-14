@@ -5,32 +5,36 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createSalesReportFixture, seedSalesTimelineFixture, installSalesTelnyxFixture } from './lib/sales-report-fixture.mjs';
+import selfReportHandler from '../pages/api/v1/sales/reports.js';
 import reportHandler from '../pages/api/v1/admin/sales/reports.js';
 const require=createRequire(import.meta.url);
 const {build}=require(process.env.ESBUILD_MODULE || 'esbuild'),{chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright'),postcss=require('postcss'),tailwind=require('tailwindcss');
 const dir=await mkdtemp(join(tmpdir(),'everycall-sales-report-browser-'));
 await build({stdin:{contents:"import React from 'react';import{createRoot}from'react-dom/client';import SalesReports from './app/admin/sales/SalesReports.jsx';createRoot(document.getElementById('root')).render(<SalesReports/>);",loader:'jsx',resolveDir:resolve('.')},bundle:true,outdir:dir,entryNames:'fixture',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'},plugins:[{name:'no-provider-code',setup(api){api.onLoad({filter:/telnyxBrowserClient|@telnyx/},()=>{throw Error('Report must not initialize calling.');});}}]});
+await build({stdin:{contents:"import React from 'react';import{createRoot}from'react-dom/client';import SalesReports from './app/admin/sales/SalesReports.jsx';createRoot(document.getElementById('root')).render(<SalesReports endpoint='/api/v1/sales/reports' selfOnly/>);",loader:'jsx',resolveDir:resolve('.')},bundle:true,outdir:dir,entryNames:'self',jsx:'automatic',define:{'process.env.NODE_ENV':'"production"'}});
 const css=await postcss([tailwind({content:[resolve('app/admin/sales/SalesReports.jsx'),resolve('app/admin/sales/SalesDayTimeline.jsx'),resolve('app/admin/sales/SalesUi.jsx')],theme:{extend:{}},plugins:[]})]).process('@tailwind base;@tailwind components;@tailwind utilities;',{from:undefined});
 await writeFile(join(dir,'fixture.css'),css.css+'\nbody{font-family:Arial,sans-serif;background:#f8fafc;padding:24px;}');
 await writeFile(join(dir,'index.html'),'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>');
 const fixture=await createSalesReportFixture();
 const providerFixture=await installSalesTelnyxFixture(fixture);
 process.env.DATABASE_URL='postgres://report-browser-fixture';globalThis.__everycallPool=fixture.pool;
-let failReport=false, delayDay='';
+let failReport=false, delayDay='', expireSelf=false, expireExport=false;
 const requests=[];
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://localhost');
-  if(url.pathname==='/api/v1/admin/sales/reports'){
+  if(['/api/v1/admin/sales/reports','/api/v1/sales/reports'].includes(url.pathname)){
+   const self=url.pathname==='/api/v1/sales/reports';
    requests.push(Object.fromEntries(url.searchParams));
    res.status=code=>{res.statusCode=code;return res;};res.json=body=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(body));return res;};res.send=body=>{res.end(body);return res;};
    if(failReport){res.status(503).json({message:'Synthetic report unavailable'});return;}
    if(url.searchParams.get('day')===delayDay && delayDay) await new Promise(resolve=>setTimeout(resolve,350));
-   req.query=Object.fromEntries(url.searchParams);req.headers.cookie='everycall_session=report-admin';
-   await reportHandler(req,res);return;
+   req.query=Object.fromEntries(url.searchParams);req.headers.cookie=self ? ((expireSelf || (expireExport && req.query.format==='csv')) ? '' : 'everycall_sales_session=report-sales') : 'everycall_session=report-admin';
+   await (self?selfReportHandler:reportHandler)(req,res);return;
   }
+  if(url.pathname==='/self') {res.setHeader('Content-Type','text/html');res.end((await readFile(join(dir,'index.html'),'utf8')).replace('/fixture.js','/self.js'));return;}
   const file=url.pathname==='/'?'index.html':url.pathname.slice(1);
-  if(!['index.html','fixture.js','fixture.css'].includes(file)){res.writeHead(404);res.end();return;}
+  if(!['index.html','fixture.js','self.js','fixture.css'].includes(file)){res.writeHead(404);res.end();return;}
   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(await readFile(join(dir,file)));
  }catch(error){res.writeHead(500);res.end(error.message);}
 });
@@ -89,7 +93,23 @@ try{
  await page.getByText('No matching Telnyx records returned for 2024-02-03 (Pacific).',{exact:true}).waitFor();await page.waitForTimeout(450);
  assert.equal(await dayPicker.inputValue(),'2024-02-03');assert.equal(await page.getByRole('img',{name:/Session timeline for/}).count(),0);
  failReport=true;await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByRole('alert').filter({hasText:'Synthetic report unavailable'}).first().waitFor();assert.equal(await page.getByRole('heading',{name:'Telnyx call records',exact:true}).count(),0);
+ failReport=false;
+ await page.goto(`http://127.0.0.1:${server.address().port}/self`);
+ await page.getByText('1–100 of 102',{exact:false}).waitFor();
+ assert.equal(await page.getByRole('combobox',{name:'Sales rep · EveryCall label',exact:true}).count(),0);
+ let selfText=await page.locator('body').innerText();assert.ok(!selfText.includes('Jordan Sales'));assert.ok(!selfText.includes('raw provider records ·'));assert.ok(selfText.includes('Your report'));
+ await page.getByRole('combobox',{name:'Timeline day (Pacific)',exact:true}).selectOption('2026-11-10');
+ await page.getByText('102 provider records on 2026-11-10',{exact:false}).waitFor();
+ await page.getByRole('button',{name:'Next page',exact:true}).click();await page.getByText('101–102 of 102',{exact:false}).waitFor();
+ await page.getByLabel('Search provider records',{exact:true}).fill('call-002');await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByText('1–1 of 1',{exact:false}).waitFor();
+ const ownDownloading=page.waitForEvent('download');await page.getByRole('button',{name:'Export filtered records (CSV)',exact:true}).click();const ownCsv=await readFile(await (await ownDownloading).path(),'utf8');assert.ok(ownCsv.includes('call-002'));assert.ok(!ownCsv.includes('Jordan Sales'));assert.ok(!ownCsv.includes('call-001'));
+ await page.screenshot({path:'/tmp/everycall-sales-self-report-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:'/tmp/everycall-sales-self-report-mobile.png',fullPage:true});
+ expireExport=true;await page.getByRole('button',{name:'Export filtered records (CSV)',exact:true}).click();await page.getByRole('alert').filter({hasText:'Your session has ended'}).waitFor();assert.equal(await page.getByRole('heading',{name:'Telnyx call records',exact:true}).count(),0);
+ expireExport=false;await page.reload();await page.getByText('1–100 of 102',{exact:false}).waitFor();expireSelf=true;
+ await page.getByRole('combobox',{name:'Timeline day (Pacific)',exact:true}).selectOption('2026-11-10');await page.getByRole('alert').filter({hasText:'Your session has ended'}).waitFor();assert.equal(await page.getByRole('heading',{name:'Telnyx call records',exact:true}).count(),0);
+ expireSelf=false;await page.reload();await page.getByText('1–100 of 102',{exact:false}).waitFor();expireSelf=true;await page.getByRole('button',{name:'Update report',exact:true}).click();await page.getByRole('alert').filter({hasText:'unauthorized'}).waitFor();assert.ok(!(await page.locator('body').innerText()).includes('Alex Sales'));
  assert.deepEqual(errors,[]);
- console.log('PASS provider report browser: real handler, all charts/rows provider-derived, snapshot paging/export, details without app data, historical dates, timeline independence/races, failure and desktop/mobile layouts');
+ console.log('PASS provider report browser: real handler, all charts/rows provider-derived, snapshot paging/export, details without app data, historical dates, timeline independence/races, failure and desktop/mobile layouts; own-only rep report, filters/day/CSV, no rep selector and JSON/day/CSV auth clearing');
  console.log('Screenshots: /tmp/everycall-sales-report-desktop.png /tmp/everycall-sales-report-mobile-details.png /tmp/everycall-sales-timeline-desktop.png /tmp/everycall-sales-timeline-mobile.png');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));providerFixture.restore();await fixture.close();}

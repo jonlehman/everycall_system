@@ -12,7 +12,7 @@ const fixture =
   "import React from 'react';import{createRoot}from'react-dom/client';import CallerWorkspace from './app/admin/sales/CallerWorkspace.jsx';const root=createRoot(document.getElementById('root'));window.unmountFixture=()=>root.unmount();root.render(<CallerWorkspace/>);";
 // Replace only the provider boundary at bundle time. The production controller,
 // queue hook, fetchSalesJson, normalizers, and screen all execute unmodified.
-const telnyxMock = `export async function connectTelnyxBrowserClient({onState,onCallUpdate,onError,remoteElement}){window.providerAudio=remoteElement;window.providerState=onState;window.providerCallUpdate=onCallUpdate;window.providerError=onError;onState('ready');window.providerEvents=[];return {isReady:()=>true,placeCall:()=>{window.providerEvents.push('place')},hangup:async()=>{window.providerEvents.push('hangup')},disconnect:async()=>{},setMuted:value=>{window.providerEvents.push(value?'mute':'unmute');return value},hasIncomingCall:()=>false};}`;
+const telnyxMock = `export async function connectTelnyxBrowserClient({onState,onCallUpdate,onError,remoteElement}){window.providerConnections=(window.providerConnections||0)+1;window.providerAudio=remoteElement;window.providerState=onState;window.providerCallUpdate=onCallUpdate;window.providerError=onError;onState('ready');window.providerEvents=[];return {isReady:()=>true,placeCall:()=>{window.providerEvents.push('place')},hangup:async()=>{window.providerEvents.push('hangup')},disconnect:async()=>{},setMuted:value=>{window.providerEvents.push(value?'mute':'unmute');return value},hasIncomingCall:()=>false};}`;
 await build({
   stdin: { contents: fixture, loader: "jsx", resolveDir: resolve(".") },
   bundle: true,
@@ -414,9 +414,51 @@ const incoming = async () => {
   await page.locator('[data-phase="TALK"]').waitFor();
 };
 try {
+  // Hold logout responses: reporting must disappear synchronously, and neither
+  // a late report response nor an in-flight CSV may resurrect/download data.
+  for (const delayed of ['report', 'csv']) {
+    await reset();
+    let pendingReport, pendingCsv, logoutRequests = 0, downloads = 0;
+    page.on('download', () => { downloads++; });
+    await page.route('**/api/v1/**/logout', async () => { logoutRequests++; });
+    const emptyReport = route => ({ ok:true, filters:Object.fromEntries(new URL(route.request().url()).searchParams), reps:[], snapshot:'a'.repeat(64),
+      totals:{records:0,uniqueSessions:0,attempted:0,connected:0,completed:0}, summary:[], statuses:[], activity:[], activityInterval:'day', durations:{}, recent:[], nextCursor:null, offset:0, exportLimit:2000,
+      coverage:{retrievedAt:'2026-11-13T18:00:00Z',matchedRecords:0,limits:'Synthetic provider coverage.'} });
+    await page.route('**/api/v1/sales/reports?**', async route => {
+      const params=new URL(route.request().url()).searchParams;
+      if(params.get('format')==='csv') { pendingCsv=route; return; }
+      if(params.get('view')) { await route.fulfill({status:503,json:{message:'Synthetic day unavailable'}}); return; }
+      if(delayed==='report') { pendingReport=route; return; }
+      await route.fulfill({json:emptyReport(route)});
+    });
+    await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Reporting',exact:true}).click();
+    if(delayed==='report') await waitUntil(()=>Boolean(pendingReport));
+    else {
+      await page.getByText('No matching Telnyx records were returned.',{exact:false}).waitFor();
+      await page.getByRole('button',{name:'Export filtered records (CSV)',exact:true}).click();
+      await waitUntil(()=>Boolean(pendingCsv));
+    }
+    await page.getByRole('button',{name:'Sign out',exact:true}).click();
+    await page.getByText('Signing out…',{exact:true}).waitFor();
+    assert.equal(await page.getByRole('heading',{name:'Your Telnyx Sales call report',exact:true}).count(),0);
+    await waitUntil(()=>logoutRequests===2);
+    if(pendingReport) await pendingReport.fulfill({json:emptyReport(pendingReport)}).catch(()=>{});
+    if(pendingCsv) await pendingCsv.fulfill({status:200,contentType:'text/csv',body:'PRIVATE_STALE_CSV'}).catch(()=>{});
+    await page.waitForTimeout(100);
+    assert.equal(downloads,0);assert.equal(await page.getByRole('heading',{name:'Your Telnyx Sales call report',exact:true}).count(),0);
+  }
   await reset();
   assert.equal(await page.getByRole("button", { name: "Keypad", exact: true }).count(), 0);
   await dial();
+  const mainNav=page.getByRole('navigation',{name:'Main'});
+  assert.deepEqual(await mainNav.getByRole('button').allTextContents(),['Dial','Contacts','Reporting']);
+  const providerBefore=await page.evaluate(()=>({connections:window.providerConnections,events:window.providerEvents}));
+  await mainNav.getByRole('button',{name:'Reporting',exact:true}).click();
+  await page.getByRole('heading',{name:'Your Telnyx Sales call report',exact:true}).waitFor();
+  await mainNav.getByRole('button',{name:'Dial',exact:true}).click();
+  await page.locator('[data-phase="TALK"]').waitFor();
+  assert.deepEqual(await page.evaluate(()=>({connections:window.providerConnections,events:window.providerEvents})),providerBefore);
+  assert.equal(requests.filter(r=>r.data.action==='end_call').length,0);
   await page.getByRole("button", { name: "Keypad", exact: true }).click();
   const keypad = page.getByRole("region", { name: "In-call keypad" });
   await keypad.getByRole("button", { name: "Pound (#)", exact: true }).click();
@@ -1093,6 +1135,8 @@ try {
       passed: true,
       controller: "real CallerWorkspace",
       checks: [
+        "Reporting third tab preserves active call and one WebRTC client",
+        "Delayed logout hides Reporting and cancels late report/CSV data",
         "company brief HTTP 200 diagnostic/reference, reload, pending and successful retry",
         "End call during demo settle",
         "End call during in-flight demo",

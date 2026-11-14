@@ -28,6 +28,7 @@ export default function CallerWorkspace() {
   const [contactSelection, setContactSelection] = useState({ companyId: null, contactId: "" });
   const [checkoutContext, setCheckoutContext] = useState(null);
   const [introEmail, setIntroEmail] = useState(null);
+  const [signingOut, setSigningOut] = useState(false);
   const [introEmailSent, setIntroEmailSent] = useState(false);
   const [prospect, setProspect] = useState(null),
     [view, setView] = useState("dial"),
@@ -567,6 +568,11 @@ export default function CallerWorkspace() {
       setAvailability({ slots: [] });
     });
   const navigate = (destination) => {
+    // Reporting is a read-only view: preserve the live controller and call draft.
+    if (destination === "reporting" || (view === "reporting" && destination === "dial")) {
+      setView(destination);
+      return;
+    }
     if (callRef.current?.id || actionPending.current) return;
     ringback.current.stop();
     setView(destination);
@@ -888,6 +894,7 @@ export default function CallerWorkspace() {
     }
   };
   const signOut = async () => {
+    setSigningOut(true);
     ringback.current.stop();
     await Promise.allSettled([
       fetch("/api/v1/sales/auth/logout", { method: "POST" }),
@@ -971,6 +978,7 @@ export default function CallerWorkspace() {
         searchResults={searchResults}
         onSearch={search}
         onSignOut={signOut}
+        signingOut={signingOut}
       />
     </>
   );
