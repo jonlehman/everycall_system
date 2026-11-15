@@ -1270,7 +1270,7 @@ export async function updateSalesProspect(pool, prospectId, changes = {}) {
   if (changes.editorMode === 'company_contacts') return withTransaction(pool, async db => {
     validateCompanyEditorFields(changes);
     await db.query('SELECT id FROM sales_dialer_config WHERE id=TRUE FOR SHARE');
-    const row = await assertSalesCompanyEditable(db, prospectId);
+    const row = await assertSalesCompanyEditable(db, prospectId, { allowProfileCorrections: true });
     if (Number(row.row_version) !== changes.expectedRowVersion) throw salesError('prospect_version_conflict','This company changed. Reload before saving.',409);
     await saveSalesCompanyContacts(db, row, changes);
     const fields = { ...changes };

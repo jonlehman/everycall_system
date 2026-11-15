@@ -34,13 +34,12 @@ export function serializeSalesCompanyContacts(row) {
  const isTest=row.test_original_phone_e164!=null;
  const contacts=(row.contacts_json||[]).map(c=>({...c,notes:c.notes??'',displayName:salesContactDisplayName(c),numbers:(c.numbers||[]).map(n=>effectiveNumber(n,isTest))}));
  const sharedNumbers=(row.shared_numbers_json||[]).map(n=>effectiveNumber(n,isTest));
- const blocked=Boolean(row.contact_edit_pending);
  const callbackContact=contacts.find(c=>c.id===row.callback_contact_id);
  const canonicalContact=(row.contacts_json||[]).find(c=>c.id===row.callback_contact_id);
  const callbackNumber=[...(row.shared_numbers_json||[]),...(canonicalContact?.numbers||[])].find(n=>n.id===row.callback_number_id);
  const callbackChanged=Boolean(row.callback_number_id&&(!callbackNumber||callbackNumber.phoneE164!==row.callback_contact_snapshot?.phoneE164));
  return {contacts,sharedNumbers,defaultContactId:row.default_contact_id||null,
-  editCapabilities:{canEdit:!blocked,reason:blocked?'End the active call and reconcile pending calls, deliveries and bookings before editing this company.':null,canEditPhones:!blocked&&!isTest,phoneReason:blocked?'End the active call and reconcile pending work before changing phones.':isTest?'Restore original Sales phones before adding, removing or changing contact phones.':null},
+  editCapabilities:{canEdit:true,reason:null,canEditPhones:!isTest,phoneReason:isTest?'Restore original Sales phones before adding, removing or changing contact phones.':null},
   callbackTarget:row.callback_contact_id?{contactId:row.callback_contact_id,numberId:row.callback_number_id||null,contactSnapshot:row.callback_contact_snapshot?{...row.callback_contact_snapshot,phoneE164:isTest&&row.callback_contact_snapshot.phoneE164?effectiveNumber({phoneE164:row.callback_contact_snapshot.phoneE164,type:row.callback_contact_snapshot.numberType},true).phoneE164:row.callback_contact_snapshot.phoneE164}:null,requiresSelection:!callbackContact||callbackChanged}:{contactId:null,numberId:null,contactSnapshot:null,requiresSelection:false}};
 }
 export async function loadSalesCompanyContacts(db,prospectId) {
@@ -65,10 +64,10 @@ export async function resolveSalesContactTarget(db,prospectId,{contactId,numberI
  return {contactId:selected.id,numberId:number?.id||null,phoneE164:number?.phoneE164||null,contactSnapshot,isTest:row.test_original_phone_e164!=null,originalPhoneE164:original?.phoneE164||null};
 }
 
-export async function assertSalesCompanyEditable(db,prospectId) {
+export async function assertSalesCompanyEditable(db,prospectId,{allowProfileCorrections=false}={}) {
  const row=(await db.query(`SELECT p.*,${SALES_CONTACT_COLUMNS_SQL} FROM sales_prospects p WHERE p.prospect_id=$1 FOR UPDATE`,[prospectId])).rows[0];
  if(!row)throw fail('prospect_not_found','Prospect not found.',404);
- if(row.contact_edit_pending)throw fail('company_edit_pending','End the active call and reconcile pending calls, deliveries and bookings before editing this company.',409);
+ if(row.contact_edit_pending&&!allowProfileCorrections)throw fail('company_edit_pending','End the active call and reconcile pending calls, deliveries and bookings before editing this company.',409);
  return row;
 }
 export function validateCompanyEditorFields(changes) {

@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 const require = createRequire(import.meta.url),
-  { build } = require("esbuild"),
+  { build } = require(process.env.ESBUILD_MODULE || "esbuild"),
   { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const dir = await mkdtemp(join(tmpdir(), "everycall-call-record-"));
 await build({
@@ -42,7 +42,9 @@ let ready = false,
 const call = {
   salesCallId: "owned-call",
   businessName: "Owned Business",
-  contactName: "Known Contact",
+  contactName: "Jane Smith",
+  contactProfile: { displayName: "Jane Smith" },
+  contactSnapshot: { displayName: "Jon Doe" },
   state: "ended",
   startedAt: "2026-10-20T12:00:00Z",
   connectedAt: "2026-10-20T12:00:10Z",
@@ -114,6 +116,8 @@ try {
   await page
     .getByRole("heading", { name: "Owned Business", exact: true })
     .waitFor();
+  await page.getByText('Jane Smith',{exact:true}).waitFor();
+  assert.equal(await page.getByText('Jon Doe',{exact:true}).count(),0,'Corrected name wins over old call snapshot');
   await page
     .getByText("Owner asked for a callback.", { exact: true })
     .waitFor();

@@ -13,6 +13,7 @@ import { connectTelnyxBrowserClient } from "./telnyxBrowserClient";
 import { createLocalRingback } from "./localRingback.mjs";
 import { initialCompanyContactId, companyContactTarget } from "./dialerState.mjs";
 import DialerScreen from "./DialerScreen";
+import CompanyContactEditor from "./CompanyContactEditor";
 import SalesIntroEmailModal from "./SalesIntroEmailModal";
 import { companyBriefRequestFailure, normalizeCompanyBrief } from "../../../lib/salesCompanyBriefDiagnostics.js";
 
@@ -25,6 +26,8 @@ export default function CallerWorkspace() {
   const { queue, queueLoading, queueError, loadQueue } = useSalesQueue({
     repMode: true,
   });
+  const [editingCompanyId, setEditingCompanyId] = useState(null);
+  const closeCompanyEditor = useCallback(() => setEditingCompanyId(null), []);
   const [contactSelection, setContactSelection] = useState({ companyId: null, contactId: "" });
   const [checkoutContext, setCheckoutContext] = useState(null);
   const [introEmail, setIntroEmail] = useState(null);
@@ -915,6 +918,9 @@ export default function CallerWorkspace() {
       />
       {introEmailSent && <div role="status" className="mx-4 mt-3">Introduction email sent.</div>}
       {introEmail && <SalesIntroEmailModal {...introEmail} currentIdentity={`${prospect?.id}:${selectedContactId}:${call?.id || ""}`} onClose={(sent) => { setIntroEmail(null); if (sent === true) setIntroEmailSent(true); }} />}
+      {editingCompanyId && <CompanyContactEditor key={editingCompanyId} prospectId={editingCompanyId} onClose={closeCompanyEditor} onSaved={(saved) => {
+        setProspect((current) => current && current.id === (saved.prospectId || saved.id) ? { ...current, ...normalizeProspect(saved), history: current.history, savedNotes: current.savedNotes, savedCallNotes: current.savedCallNotes, note: current.note } : current);
+      }} />}
       <DialerScreen
         key={`${prospect?.id || "empty"}:${incomingTaken.current || ""}`}
         queue={queue}
@@ -926,6 +932,7 @@ export default function CallerWorkspace() {
         onRestoreContact={restoreContact}
         onAddContact={addContact}
         prospect={prospect}
+        onEditCompany={() => setEditingCompanyId(prospect.id)}
         checkoutContext={checkoutContext}
         selectedContactId={selectedContactId}
         onCompanyContact={(contactId) => { if (!callRef.current?.id && !actionPending.current) setContactSelection({ companyId: prospect.id, contactId, explicit: true }); }}

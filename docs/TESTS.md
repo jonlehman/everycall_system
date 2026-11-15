@@ -1,5 +1,7 @@
 # Manual Call Test Scripts
 
+- SALES-CONTACT-011 in-call corrections: `validate-sales-auth.mjs` exercises actual authenticated PATCH during a nonterminal call, replay, stale version and reassignment denial; `validate-sales-company-contacts.mjs` verifies profile/phone corrections leave call/provider facts unchanged and current/historical views show corrected names. `test-sales-dialer-controller.mjs` opens the shared editor during TALK, checks native validation and a failed-save draft, saves/cancels without navigation, and checks unchanged WebRTC connection/events, call state and live notes. `test-sales-intro-email.mjs` rejects stale-recipient drafts and allows a new draft for the corrected email on the same contact. All fixtures use disposable data and stubbed providers.
+
 For the November 13 unified paid intake production deployment, provider evidence and gate status, see the [production release record](reviews/unified-paid-intake-production-2026-11-13.md).
 
 `scripts/test-upib-catalog-batching.mjs` compares exact ordered JSON and frozen fingerprints for all eight baseline, sixteen installed and eight post-install exclusion contracts against the prior five-query reader. Under a 75 ms per-query transport simulation, the old path must hit the unchanged PostgreSQL transaction deadline and roll back; the batched path must install the same schema under that deadline. The existing migration suite separately retains all drift, lock contention, row preservation, receipt rollback and real timeout checks.

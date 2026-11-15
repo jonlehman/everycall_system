@@ -71,8 +71,8 @@ async function context(db, {prospectId, contactId, repId, isAdmin=false, salesCa
     if (!call || call.prospect_id !== prospectId || Number(call.admin_user_id) !== Number(repId)) throw fail('intro_email_call_forbidden', 'The call does not belong to this company and rep.', 403);
     if (call.metadata_json?.phone_test_mode) throw fail('sales_phone_test_external_action_blocked', 'Introduction emails cannot be sent from test calls.');
     const snapshot = call.metadata_json?.contact_snapshot;
-    if (call.metadata_json?.contact_id !== contactId || snapshot?.contactId !== contactId || email(snapshot?.email) !== recipient) {
-      throw fail('intro_email_call_contact_changed', 'The selected contact no longer matches the contact recorded on this call. Open the company without the old call.');
+    if (call.metadata_json?.contact_id !== contactId || snapshot?.contactId !== contactId) {
+      throw fail('intro_email_call_contact_changed', 'Choose the contact associated with this call.');
     }
   }
   return {prospect, selected, recipient, replyTo, requiresPermission: !(prospect.email_permission && prospect.default_contact_id === contactId && email(prospect.contact_email) === recipient)};

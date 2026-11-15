@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { buildSalesCallView } from '../pages/api/_lib/salesCallView.js';
 import fs from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
@@ -79,9 +80,21 @@ try {
  assert.equal(call.metadata.contact_snapshot.firstName,'Alex');assert(!Object.hasOwn(call.metadata.contact_snapshot,'notes'));
  const replay=await createSalesCallSession(pool,{prospectId:'company',adminUserId:1,idempotencyKey:'same',contactId:alex.id,numberId:alex.numbers[0].id,expectedRowVersion:p.rowVersion,metadata:{prospect_number:alex.numbers[0].phoneE164}});assert.equal(replay.salesCallId,call.salesCallId);
  await assert.rejects(createSalesCallSession(pool,{prospectId:'company',adminUserId:1,idempotencyKey:'same',contactId:pat.id}),blocked('idempotency_key_conflict'));
- await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),businessName:'active'}),blocked('company_edit_pending'));
+ await q("UPDATE sales_call_sessions SET state='prospect_connected',prospect_call_control_id='provider-existing-call' WHERE sales_call_id='call'");
+ await q("INSERT INTO sales_checkout_sessions(checkout_id,sales_call_id,prospect_id,rep_user_id,channel,recipient,status,contact_snapshot) VALUES('pending-profile-edit','call','company',1,'email','alex@example.test','created',$1::jsonb)",[JSON.stringify({contactId:alex.id,email:'alex@example.test'})]);
+ const deliveryBefore=(await q("SELECT recipient,contact_snapshot,status FROM sales_checkout_sessions WHERE checkout_id='pending-profile-edit'")).rows;
+ const beforeCorrection=await q("SELECT state,metadata_json,prospect_call_control_id FROM sales_call_sessions WHERE sales_call_id='call'");
+ p=await updateSalesProspect(pool,'company',{...patch(p),businessName:'Corrected Company',contacts:p.contacts.map(c=>c.id===alex.id?{...c,firstName:'Jane',lastName:'Smith',title:'Manager',email:'jane@example.test',numbers:c.numbers.map(n=>({...n,phoneE164:'+12065550105'}))}:c)});
+ assert.deepEqual((await q("SELECT recipient,contact_snapshot,status FROM sales_checkout_sessions WHERE checkout_id='pending-profile-edit'")).rows,deliveryBefore,'Pending recipient/payload remains unchanged');
+ await q("UPDATE sales_checkout_sessions SET status='expired' WHERE checkout_id='pending-profile-edit'");
+ assert.equal(p.editCapabilities.canEdit,true);assert.equal(p.contacts.find(c=>c.id===alex.id).displayName,'Jane Smith');
+ assert.deepEqual((await q("SELECT state,metadata_json,prospect_call_control_id FROM sales_call_sessions WHERE sales_call_id='call'")).rows,beforeCorrection.rows,'Profile edits do not alter the live provider call');
+ const currentView=await buildSalesCallView(pool,call,{operatorUserId:1});
+ assert.equal(currentView.contactName,'Jane Smith');assert.equal(currentView.businessName,'Corrected Company');assert.equal(currentView.dialedNumber,'+12065550103');
+ await assert.rejects(updateSalesProspect(pool,'company',{...patch(p),expectedRowVersion:p.rowVersion-1,businessName:'stale'}),blocked('prospect_version_conflict'));
  await assert.rejects(q("UPDATE sales_call_sessions SET metadata_json=metadata_json||'{\"contact_id\":\"other\"}' WHERE sales_call_id='call'"),blocked('P5903'));
  await q("UPDATE sales_call_sessions SET state='ended',ended_at=NOW() WHERE sales_call_id='call'");
+ assert.equal((await buildSalesCallView(pool,{...call,state:'ended'},{operatorUserId:1})).contactName,'Jane Smith','Historical call labels use corrected contact');
  p=await getSalesProspect(pool,'company');
  await mutateSalesContact(pool,{prospectId:'company',repId:1,action:'callback',callbackAt:new Date(Date.now()+3600000).toISOString(),expectedRowVersion:p.rowVersion,contactId:alex.id,numberId:alex.numbers[0].id});
  p=await getSalesProspect(pool,'company');

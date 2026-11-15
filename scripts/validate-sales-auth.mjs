@@ -350,15 +350,21 @@ try {
 
   // Full company PATCH has no legacy escape hatch for status or hidden fields.
   const editGet=await call(salesProspectDetail,contactRequest(salesCookie,{prospectId:addedId}));
-  const editBody={editorMode:'company_contacts',expectedRowVersion:editGet.body.prospect.rowVersion,businessName:'Edited company'};
+  const editingContact=editGet.body.prospect.contacts[0];
+  await query("INSERT INTO sales_call_sessions(sales_call_id,prospect_id,admin_user_id,state,metadata_json) VALUES('active-editor-call',$1,$2,'prospect_connected',$3::jsonb)",[addedId,sales.id,JSON.stringify({contact_id:editingContact.id,contact_snapshot:{contactId:editingContact.id,displayName:'Jon Doe'},prospect_number:editGet.body.prospect.sharedNumbers[0]?.phoneE164||editingContact.numbers[0]?.phoneE164})]);
+  const editBody={editorMode:'company_contacts',expectedRowVersion:editGet.body.prospect.rowVersion,businessName:'Edited company',contacts:editGet.body.prospect.contacts.map(c=>c.id===editingContact.id?{...c,firstName:'Jane',lastName:'Smith',title:'Manager',email:'jane@example.test'}:c)};
   const editReq={...request(salesCookie,'PATCH',editBody),query:{prospectId:addedId}};
   const editResult=await call(salesProspectDetail,editReq);assert.equal(editResult.statusCode,200,JSON.stringify(editResult.body));
+  assert.equal(editResult.body.prospect.contacts.find(c=>c.id===editingContact.id).displayName,'Jane Smith');
+  assert.equal(editResult.body.prospect.editCapabilities.canEdit,true);
   assert.equal((await call(salesProspectDetail,editReq)).body.prospect.rowVersion,editResult.body.prospect.rowVersion);
+  assert.equal((await call(salesProspectDetail,{...request(salesCookie,'PATCH',editBody),query:{prospectId:addedId}})).statusCode,409,'A different stale save is rejected during the active call');
   const forbiddenPatch={...request(salesCookie,'PATCH',{expectedRowVersion:editResult.body.prospect.rowVersion,status:'paid'}),query:{prospectId:addedId}};
   assert.equal((await call(salesProspectDetail,forbiddenPatch)).statusCode,400);
   await query('UPDATE sales_prospects SET assigned_rep_user_id=$2 WHERE prospect_id=$1',[addedId,created.id]);
   assert.equal((await call(salesProspectDetail,editReq)).statusCode,403,'Edit receipt cannot replay after reassignment');
   assert.equal((await call(salesCallback,setRequest)).statusCode,403,'Callback target receipt cannot replay after reassignment');
+  await query("UPDATE sales_call_sessions SET state='ended',ended_at=NOW() WHERE sales_call_id='active-editor-call'");
   // Real call POST receipt must also check current owner before replay.
   process.env.SALES_CALL_WINDOW_START_LOCAL='00:00';process.env.SALES_CALL_WINDOW_END_LOCAL='00:00';
   process.env.SALES_TELNYX_CALLER_ID='+12065559999';

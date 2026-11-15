@@ -15,13 +15,15 @@ export function companyEditorReturnPath(returnTo, prospectId) {
 
 const SECTIONS = [["details", "Business details"], ["phones", "Company phone numbers"], ["people", "People at this company"], ["permissions", "Contact permissions"], ["activity", "Company activity"]];
 
-export default function CompanyContactEditor({ prospectId, returnTo = "queue" }) {
+export default function CompanyContactEditor({ prospectId, returnTo = "queue", onClose, onSaved }) {
   const [prospect, setProspect] = useState(null), [draft, setDraft] = useState(null),
     [savedDraft, setSavedDraft] = useState(""), [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false), [error, setError] = useState(""),
     [conflict, setConflict] = useState(false), [notice, setNotice] = useState(""),
     [revision, setRevision] = useState(0);
   const attempt = useRef(null);
+  const dialogRef = useRef(null);
+  useEffect(() => { if (onClose) dialogRef.current?.showModal(); }, [onClose]);
   const tabPrefix = useId();
   const [activeSection, setActiveSection] = useState("details");
   const firstInvalid = useRef(null);
@@ -76,7 +78,8 @@ export default function CompanyContactEditor({ prospectId, returnTo = "queue" })
     if (dirty && !window.confirm("Leave this page and discard your unsaved changes?")) return;
     // Explicit leave already confirms draft loss; remove beforeunload by clearing the draft first.
     setSavedDraft(JSON.stringify(draft));
-    window.setTimeout(() => window.location.assign(returnPath), 0);
+    if (onClose) onClose();
+    else window.setTimeout(() => window.location.assign(returnPath), 0);
   };
   const reload = () => {
     if (dirty && !window.confirm("Reload the latest company details and discard your unsaved changes?")) return;
@@ -96,14 +99,15 @@ export default function CompanyContactEditor({ prospectId, returnTo = "queue" })
       const next = companyEditorDraft(result.prospect);
       setProspect(result.prospect); setDraft(next); setSavedDraft(JSON.stringify(next));
       attempt.current = null; setNotice("Company details saved.");
+      onSaved?.(result.prospect);
     } catch (failure) {
       if (failure.status === 409) {
         setConflict(true);
-        setError("This company changed while you were editing, or an active call or delivery is preventing this save. Your draft is still here. Review your changes, then reload the latest details before saving again.");
+        setError("This company changed while you were editing, or a protected field cannot be changed. Your draft is still here. Review your changes, then reload the latest details before saving again.");
       } else setError(failure.status === 413 ? "These company details exceed the save request size limit. Your draft is still here." : failure.status === 403 ? "You no longer have access to save this company. Your draft is still here." : failure.message || "Could not save the company. Your draft is still here.");
     } finally { setSaving(false); }
   };
-  return <div className={styles.page}>
+  const content = <div className={styles.page}>
     <header className={styles.header}><div><span className={styles.eyebrow}>Company profile</span><h1>{prospect?.businessName || "Edit company"}</h1><p className={styles.muted}>Update business details, contacts, and phone numbers.</p></div><HintButton type="button" className={styles.button} disabled={saving} disabledReason="Wait for this company to finish saving." onClick={leave}>← Back to {returnTo === "admin" ? "prospects" : returnTo === "contacts" ? "contacts" : "dialer"}</HintButton></header>
     {loading && <p role="status">Loading company…</p>}
     {error && <div className={styles.error} role="alert"><p>{error}</p>{conflict && <HintButton type="button" className={styles.button} disabled={saving} disabledReason="Wait for this company to finish saving." onClick={reload}>Reload latest details</HintButton>}</div>}
@@ -123,4 +127,5 @@ export default function CompanyContactEditor({ prospectId, returnTo = "queue" })
       <footer className={`${styles.footer} ${styles.actions}`}><span className={styles.muted}>{saving ? "Saving company…" : dirty ? "You have unsaved changes." : "All changes saved."}</span><div className={styles.actions}><HintButton type="button" className={styles.button} disabled={saving} disabledReason="Wait for this company to finish saving." onClick={leave}>Cancel</HintButton><HintButton type="submit" className={`${styles.button} ${styles.primary}`} disabled={Boolean(saveReason)} disabledReason={saveReason}>{saving ? "Saving…" : "Save changes"}</HintButton></div></footer>
     </form>}
   </div>;
+  return onClose ? <dialog ref={dialogRef} className={styles.dialog} aria-label="Edit company" onCancel={(event) => { event.preventDefault(); leave(); }}>{content}</dialog> : content;
 }

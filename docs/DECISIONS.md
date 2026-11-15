@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-11-15 — Correct company/contact profiles during Sales calls
+
+The owner approved normal company/contact corrections while a call continues and rejected retaining an incorrect displayed contact identity as an additional workflow. SALES-CONTACT-011 explicitly supersedes the separate-page/blanket-lock and frozen displayed-profile portions of SALES-CONTACT-001/003/010; original requirements remain in the [company contacts specification](SPECS/sales-company-contacts.md). Reuse the editor within the mounted caller workspace and resolve current/historical labels from the existing contact ID. Preserve actual provider connection/destination facts, ownership/version/idempotency, phone-test/DNC protections and operation-bound delivery/consent checks. No migration or knowledge-build behavior changes.
+
 ## 2026-11-13 — Preserve the owner's phone and delete the named unused account
 
 - The owner corrected the old-account classification: “creative_dynamio” is their business/test phone, canonically `creative_dynamic`, and must keep answering. They explicitly requested deleting `daved`. This narrowly supersedes UPIB-014's earlier tests/inactive assumption for those two accounts, without changing its original text, any public price or other tenants.

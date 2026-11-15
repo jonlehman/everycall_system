@@ -2,6 +2,18 @@
 
 Status: Owner requested November 9, 2026; shared company phones and selected-contact delivery defaults explicitly confirmed. This extends the Sales v2 specification and preserves its calling, payment, phone-test, source-authority and publication constraints.
 
+## Owner-approved in-call corrections — November 15, 2026
+
+The owner explicitly approved correcting company/contact records during a call and rejected the blanket edit lock and preservation of an incorrect displayed identity (for example, correcting Jon Doe to Jane Smith). This supersedes the separate-page-only behavior of SALES-CONTACT-001, immutable displayed profile/history/script identity in SALES-CONTACT-003, and the pending-work restriction for interactive metadata saves referenced by SALES-CONTACT-010. Original requirement IDs and historical text below remain recorded; this approved section governs the changed behavior.
+
+Edit company in the caller workspace opens the existing tabbed editor in a dialog without unmounting the call controller or dialer. Saving updates normal company/contact records, including names, title, email, business fields and phones, while preserving live audio, call state, notes and wrap-up drafts. Current profile labels and scripts use corrected contact/company data; call records resolve the same stable contact ID to its corrected name, including after reload. The connected call's actual dialed destination and provider identifiers remain unchanged. No new historical-profile workflow, schema or migration is required.
+
+Assigned-company authorization, version conflicts, idempotent receipts, field validation, phone-test restrictions, permanent DNC and explicit email-recipient consent still apply. Active calls and previously created checkout/booking/invitation work do not lock the ordinary profile editor. Existing reserved or dispatched delivery recipients/payloads stay bound to their original operation; editing a profile cannot silently retarget or resend them. A fresh introduction draft can use the corrected current email for the same call contact, with existing draft/version/permission checks. Noninteractive source enrichment and imports retain their existing pending-work guards.
+
+| ID | Approved behavior and implementation | Regression |
+|---|---|---|
+| SALES-CONTACT-011 | Embedded `CompanyContactEditor` in `CallerWorkspace`; current profile in `DialerScreen`/`salesCallView`; ordinary interactive corrections through owned/versioned prospect PATCH while the call continues. Supersedes the display/edit restrictions above. | `test-sales-dialer-controller.mjs` live editor, error/validation, notes/audio/state preservation; `validate-sales-auth.mjs` actual active-call PATCH, stale/replay/reassignment; `validate-sales-company-contacts.mjs` phone/profile corrections and current/historical labels; `test-sales-intro-email.mjs` corrected fresh draft and stale-recipient rejection. |
+
 ## Behavior and authority
 
 Every Sales company row and Current prospect has an Edit action opening a separate page. Sales reps edit only assigned companies; administrators retain company-management access. Business fields are business name, website, category, competitor, source ID, city, region, metro, after-hours classification, posted hours, opener hook, research notes, pitch flags, timezone and lead-delivery email. Calling/email permissions remain explicit consent fields. Assignment, outcomes, callbacks, removal, permanent suppression, Paid and build/publication state retain their existing workflows.

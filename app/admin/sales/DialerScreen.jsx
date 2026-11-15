@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { callDispositions, canonicalSalesOutcome, salesDispositionLabel } from '../../../lib/salesDispositions.js';
 import { parseSalesSignupDollars, formatSalesSignupAmount } from '../../../lib/salesSignupAmount.js';
 import { normalizeSalesCheckoutPhone } from "../../../lib/salesCheckoutRecipient.js";
@@ -147,6 +147,7 @@ export default function DialerScreen({
   checkoutContext,
   selectedContactId = prospect?.defaultContactId,
   onCompanyContact,
+  onEditCompany,
   call,
   busy,
   error,
@@ -197,7 +198,7 @@ export default function DialerScreen({
   const phase = dialerPhase(call),
     active = Boolean(call?.id && !call.terminal),
     selectedContact = prospect?.contacts?.find(item => item.id === selectedContactId),
-    displayContact = call?.id ? call.contactSnapshot : selectedContact,
+    displayContact = selectedContact || call?.contactProfile || call?.contactSnapshot,
     numbers = orderNumbers(selectedContact ? [...(selectedContact.numbers || []), ...(prospect?.sharedNumbers || []).map(number => ({ ...number, shared: true }))] : []),
     cell = numbers.find((n) => n.type === "cell");
   const [picker, setPicker] = useState(""),
@@ -208,18 +209,30 @@ export default function DialerScreen({
     [slot, setSlot] = useState(null),
     [addingIncoming, setAddingIncoming] = useState("");
   useEffect(() => { setSignupCharge("100.00"); setEmail(displayContact?.email || ""); setChannel(cell ? "sms" : "email"); setPhone(cell?.phoneE164 || ""); }, [prospect?.id, selectedContactId, call?.id, queue.config?.phoneTestMode, queue.config?.customSignupAmountEnabled]);
+  const recipientDefaults = useRef(null);
+  useEffect(() => {
+    const next = { key: `${prospect?.id}:${selectedContactId}:${call?.id || ""}`, email: displayContact?.email || "", phone: cell?.phoneE164 || "" };
+    const previous = recipientDefaults.current;
+    if (previous?.key === next.key) {
+      // Refresh untouched defaults after a correction without discarding a typed recipient.
+      setEmail(current => current === previous.email ? next.email : current);
+      setPhone(current => current === previous.phone ? next.phone : current);
+    }
+    recipientDefaults.current = next;
+  }, [prospect?.id, selectedContactId, call?.id, displayContact?.email, cell?.phoneE164]);
+
   const amountCents = checkoutContext?.amountCents ?? parseSalesSignupDollars(signupCharge);
   const selectedOutcome = canonicalSalesOutcome(dispositions);
   const suppressesCalls = ["do_not_call", "wrong_number", "not_interested"].includes(selectedOutcome);
   const scripts = queue.scripts || {},
     vars = {
       first_name: displayContact?.firstName || displayContact?.displayName?.split(" ")[0] || "there",
-      business_name: (call?.id ? call.raw?.businessName || call.businessName : prospect?.businessName) || "your business",
+      business_name: (prospect?.businessName || call?.raw?.businessName || call?.businessName) || "your business",
       signup_charge: amountCents ? formatSalesSignupAmount(amountCents) : "the agreed signup charge",
       rep_name: queue.operator?.name || "",
       rep_phone: queue.operator?.phone || "",
-      cell: call?.id ? (displayContact?.numberType === "cell" ? displayContact.phoneE164 : "") : cell?.phoneE164 || "",
-      shop: call?.id ? (displayContact?.numberType === "shop" ? displayContact.phoneE164 : "") : numbers.find((n) => n.type === "shop")?.phoneE164 || "",
+      cell: cell?.phoneE164 || "",
+      shop: numbers.find((n) => n.type === "shop")?.phoneE164 || "",
     },
     script = (key) =>
       renderScript(scripts[key] || (key === "handoff" ? HANDOFF : ""), vars);
@@ -440,7 +453,7 @@ export default function DialerScreen({
                 Remove from list
               </Button>
             </div>
-            <Button disabled={Boolean(busy || call?.id || !prospect?.id || prospect?.editCapabilities?.canEdit === false)} disabledReason={disabledReasons(busy && busyReason, call?.id && "Finish the current call and save its outcome before editing.", !prospect?.id && "Select a company first.", prospect?.editCapabilities?.canEdit === false && prospect.editCapabilities.reason)} onClick={() => window.location.assign(`/sales/prospects/${encodeURIComponent(prospect.id)}/edit?returnTo=queue`)}>Edit company</Button>
+            <Button disabled={Boolean(busy || !prospect?.id || prospect?.editCapabilities?.canEdit === false)} disabledReason={disabledReasons(busy && busyReason, !prospect?.id && "Select a company first.", prospect?.editCapabilities?.canEdit === false && prospect.editCapabilities.reason)} onClick={onEditCompany || (() => window.location.assign(`/sales/prospects/${encodeURIComponent(prospect.id)}/edit?returnTo=queue`))}>Edit company</Button>
             <h1>{prospect?.businessName || "No prospects ready to call"}</h1>
             <p className={styles.contact}>
               {[displayContact?.displayName || (call?.id ? "Contact not recorded" : "Choose a contact"), displayContact?.title]

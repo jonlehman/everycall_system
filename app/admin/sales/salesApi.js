@@ -491,6 +491,7 @@ export function normalizeCall(payload = {}) {
     customerPaid: Boolean(source.customerPaid),
     phoneTestMode: Boolean(source.phoneTestMode),
     contactSnapshot: source.contactSnapshot || source.metadata?.contact_snapshot || null,
+    contactProfile: source.contactProfile || null,
     contactId: source.contactId || source.metadata?.contact_id || null,
     numberId: source.numberId || source.metadata?.number_id || null,
     demoStartedAt: source.demoStartedAt || source.demo_started_at || null,

@@ -138,7 +138,7 @@ export default function CallRecord({ salesCallId }) {
             <dl className="grid gap-5 sm:grid-cols-2">
               <Detail label="Business">{business}</Detail>
               <Detail label="Contact">
-                {call.contactSnapshot?.displayName || call.raw?.contactName || "Contact not recorded"}
+                {call.contactProfile?.displayName || call.raw?.contactName || call.contactSnapshot?.displayName || "Contact not recorded"}
               </Detail>
               <Detail label="Number">{formatPhone(call.dialedNumber)}</Detail>
               <Detail label="Outcome">

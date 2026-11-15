@@ -45,7 +45,7 @@ const prospect = {
   eligible: true,
   phone: "+15035550101",
   numbers: [{ phoneE164: "+15035550101", label: "Cell", type: "cell" }],
-  defaultContactId: "owner", rowVersion: 1,
+  defaultContactId: "owner", rowVersion: 1, editCapabilities: {canEdit:true,canEditPhones:true},
   contacts: [{ id: "owner", firstName: "Original", displayName: "Original Owner", email: "owner@example.test", numbers: [{ id: "owner-cell", phoneE164: "+15035550101", type: "cell", label: "Cell" }] }, { id: "second", firstName: "Second", displayName: "Second Person", email: "second@example.test", numbers: [{ id: "second-cell", phoneE164: "+15035550102", type: "cell", label: "Personal cell" }] }], sharedNumbers: [{ id: "shared-office", phoneE164: "+15035550103", type: "shop", label: "Office" }],
   coreFacts: [
     {
@@ -72,7 +72,7 @@ const notPrepped = { ...prospect, id: "not-prepped", businessName: "Awaiting Pre
 const paidContact = { ...prospect, id: "paid-contact", businessName: "Paid Business", status: "paid" };
 const dncContact = { ...prospect, id: "dnc-contact", businessName: "Do Not Call Business", doNotCall: true };
 const removedContact = { ...prospect, id: "removed-contact", businessName: "Removed Business", status: "removed" };
-let fixtureCheckoutContext = null, ringingFixture = false;
+let fixtureCheckoutContext = null, ringingFixture = false, rejectCompanySave = false;
 let testMode = false, holdCheckout = false, checkoutReply = null, failNextCheckout = false;
 let requests = [],
   briefStep = 0,
@@ -226,7 +226,13 @@ const server = createServer(async (req, res) => {
     if (rejectRestore) { res.statusCode = 409; return send({ error: "Contact changed. Review and try again." }); }
     return send({ prospect: { ...removedContact, status: "queued", demoStatus: "not_prepared", eligible: false, preparationEligible: true, website: "https://example.com", rowVersion: 2 } });
   }
-  if (path.pathname.endsWith(`/prospects/${prospect.id}`)) return send({ prospect });
+  if (path.pathname.endsWith(`/prospects/${prospect.id}`)) {
+    if (req.method === 'PATCH') {
+      if (rejectCompanySave) { res.statusCode=503; return send({error:'Temporary save failure'}); }
+      Object.assign(prospect,data,{rowVersion:prospect.rowVersion+1,contacts:data.contacts.map(c=>({...c,displayName:[c.firstName,c.lastName].filter(Boolean).join(' ')}))});
+    }
+    return send({ prospect });
+  }
   const selectedContact = [matched, notPrepped, paidContact, dncContact, removedContact].find((item) => path.pathname.endsWith(`/prospects/${item.id}`));
   if (selectedContact) return send({ prospect: { ...selectedContact, calls: [], noteHistory: [{ id: 'saved-selected-call', outcomeNotes: 'Selected company saved call note', outcomeRecordedAt: '2026-11-09T12:00:00Z' }], notes: [{ noteId: 'saved-company', body: 'Selected company standalone note', createdAt: '2026-11-08T12:00:00Z' }] } });
   if (path.pathname.endsWith("/prospects/not-prepped/demo")) return send({ ok: true });
@@ -459,6 +465,59 @@ try {
   await page.locator('[data-phase="TALK"]').waitFor();
   assert.deepEqual(await page.evaluate(()=>({connections:window.providerConnections,events:window.providerEvents})),providerBefore);
   assert.equal(requests.filter(r=>r.data.action==='end_call').length,0);
+  // Editing the live company's profile keeps the real controller and dialer draft mounted.
+  const profileBefore=structuredClone(prospect), callBefore=structuredClone(calls[currentId]);
+  const locationBefore=page.url();
+  await page.getByLabel('Notes — carry into the wrap-up',{exact:true}).fill('Keep this live call draft');
+  await page.getByRole('button',{name:'Edit company',exact:true}).click();
+  const editor=page.getByRole('dialog',{name:'Edit company',exact:true});
+  await editor.getByLabel('Business name',{exact:true}).fill('Corrected Business');
+  await editor.getByRole('tab',{name:'People at this company',exact:true}).click();
+  await editor.getByLabel('First name',{exact:true}).first().fill('Jane');
+  await editor.getByLabel('Last name',{exact:true}).first().fill('Smith');
+  await editor.getByLabel('Email',{exact:true}).first().fill('invalid-email');
+  const priorSaves=requests.filter(r=>r.method==='PATCH').length;
+  await editor.getByRole('button',{name:'Save changes',exact:true}).click();
+  assert.equal(requests.filter(r=>r.method==='PATCH').length,priorSaves,'Invalid editor input is not submitted');
+  await editor.getByLabel('Email',{exact:true}).first().fill('jane@example.test');
+  await editor.getByRole('article',{name:'Contact 1',exact:true}).getByLabel('Phone 1',{exact:true}).fill('+15035550109');
+  rejectCompanySave=true;
+  await editor.getByRole('button',{name:'Save changes',exact:true}).click();
+  await editor.getByText('Temporary save failure',{exact:true}).waitFor();
+  assert.equal(await editor.getByLabel('First name',{exact:true}).first().inputValue(),'Jane');
+  assert.deepEqual(await page.evaluate(()=>({connections:window.providerConnections,events:window.providerEvents})),providerBefore);
+  rejectCompanySave=false;
+  await editor.getByRole('button',{name:'Save changes',exact:true}).click();
+  await editor.getByText('Company details saved.',{exact:true}).waitFor();
+  await page.screenshot({path:join(dir,'active-call-company-saved.png'),fullPage:true});
+  await editor.getByRole('button',{name:'Back to dialer',exact:false}).click();
+  await page.locator('[data-phase="TALK"]').waitFor();
+  assert.equal(await page.getByLabel('Notes — carry into the wrap-up',{exact:true}).inputValue(),'Keep this live call draft');
+  await page.getByText('Jane Smith',{exact:true}).waitFor();
+  assert.equal(page.url(),locationBefore);
+  assert.deepEqual(calls[currentId],callBefore);
+  assert.deepEqual(await page.evaluate(()=>({connections:window.providerConnections,events:window.providerEvents})),providerBefore);
+  assert.equal(requests.filter(r=>r.data.action==='end_call').length,0);
+  await page.screenshot({path:join(dir,'active-call-corrected-profile.png'),fullPage:true});
+  await page.getByRole('list',{name:'Call phases'}).getByRole('button',{name:'Close',exact:true}).click();
+  assert.equal(await page.getByLabel('Invite to',{exact:true}).inputValue(),'jane@example.test','Pristine booking email follows correction');
+  assert.equal(await page.getByLabel('Text to',{exact:true}).inputValue(),'+15035550109','Pristine signup phone follows correction');
+  await page.getByRole('button',{name:'Email',exact:true}).click();
+  await page.getByLabel('Email to',{exact:true}).fill('typed-recipient@example.test');
+  await page.getByRole('button',{name:'Text',exact:true}).click();
+  await page.getByLabel('Text to',{exact:true}).fill('+15035550188');
+  await page.getByRole('button',{name:'Edit company',exact:true}).click();
+  await editor.getByRole('tab',{name:'People at this company',exact:true}).click();
+  await editor.getByLabel('Email',{exact:true}).first().fill('jane-new@example.test');
+  await editor.getByRole('article',{name:'Contact 1',exact:true}).getByLabel('Phone 1',{exact:true}).fill('+15035550119');
+  await editor.getByRole('button',{name:'Save changes',exact:true}).click();
+  await editor.getByText('Company details saved.',{exact:true}).waitFor();
+  await editor.getByRole('button',{name:'Back to dialer',exact:false}).click();
+  assert.equal(await page.getByLabel('Invite to',{exact:true}).inputValue(),'typed-recipient@example.test','Typed booking recipient survives profile save');
+  assert.equal(await page.getByLabel('Text to',{exact:true}).inputValue(),'+15035550188','Typed signup recipient survives profile save');
+  assert.deepEqual(await page.evaluate(()=>({connections:window.providerConnections,events:window.providerEvents})),providerBefore);
+  Object.assign(prospect,profileBefore);
+  console.log('controller: active-call profile correction, validation/save error and live draft/audio preservation');
   await page.getByRole("button", { name: "Keypad", exact: true }).click();
   const keypad = page.getByRole("region", { name: "In-call keypad" });
   await keypad.getByRole("button", { name: "Pound (#)", exact: true }).click();

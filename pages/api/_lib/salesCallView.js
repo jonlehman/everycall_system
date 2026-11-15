@@ -1,3 +1,4 @@
+import { salesContactDisplayName } from "../../../lib/salesCompanyContacts.js";
 import {
   getSalesSignupInvitation,
   normalizeSalesText,
@@ -74,12 +75,20 @@ export async function buildSalesCallView(pool, call, {
   const state = normalizeSalesText(call.state, 80).toLowerCase();
   const aiState = normalizeSalesText(call.aiState, 80).toLowerCase();
   const prospect = (await pool.query('SELECT business_name, contact_name, status FROM sales_prospects WHERE prospect_id=$1', [call.prospectId])).rows[0];
+  const contactId = call.metadata?.contact_id || call.metadata?.contact_snapshot?.contactId || null;
+  const contactRow = contactId ? (await pool.query('SELECT contact_id, first_name, last_name, legacy_name, email, title, decision_maker, influencer FROM sales_prospect_contacts WHERE prospect_id=$1 AND contact_id=$2', [call.prospectId, contactId])).rows[0] : null;
+  const contactProfile = contactRow ? {
+    contactId: contactRow.contact_id, firstName: contactRow.first_name, lastName: contactRow.last_name,
+    displayName: salesContactDisplayName({ firstName: contactRow.first_name, lastName: contactRow.last_name, legacyName: contactRow.legacy_name }),
+    email: contactRow.email, title: contactRow.title, decisionMaker: contactRow.decision_maker, influencer: contactRow.influencer
+  } : null;
   const signup = await loadLatestSignupProgress(pool, call, operatorUserId);
   return {
     salesCallId: call.salesCallId,
     prospectId: call.prospectId,
-    businessName: call.metadata?.business_name || prospect?.business_name || null,
-    contactName: call.metadata?.contact_snapshot?.displayName || "Contact not recorded",
+    businessName: prospect?.business_name || call.metadata?.business_name || null,
+    contactName: contactProfile?.displayName || call.metadata?.contact_snapshot?.displayName || "Contact not recorded",
+    contactProfile,
     contactSnapshot: call.metadata?.contact_snapshot || null,
     contactId: call.metadata?.contact_id || null, numberId: call.metadata?.number_id || null,
     state: call.state,

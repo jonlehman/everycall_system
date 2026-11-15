@@ -118,6 +118,10 @@ try {
   await assert.rejects(send(phoneDraft,{prospectId:'phone-test'}),blocked('intro_email_context_changed'));
   await q(`INSERT INTO sales_call_sessions(sales_call_id,prospect_id,admin_user_id,state,metadata_json) VALUES('ended-call','company',1,'ended',$1::jsonb)`,[JSON.stringify({contact_id:'contact_legacy_company',contact_snapshot:{contactId:'contact_legacy_company',email:'company@example.test'}})]);
   const callDraft=await draft('company',{salesCallId:'ended-call'});assert(callDraft.draftToken);
+  await q("UPDATE sales_prospect_contacts SET first_name='Jane',email='jane-corrected@example.test' WHERE contact_id='contact_legacy_company'");
+  await q("UPDATE sales_prospects SET row_version=row_version+1 WHERE prospect_id='company'");
+  await assert.rejects(send(callDraft),error=>['intro_email_draft_changed','intro_email_context_changed'].includes(error.code));
+  const correctedDraft=await draft('company',{salesCallId:'ended-call'});assert.equal(correctedDraft.recipient,'jane-corrected@example.test');
   await assert.rejects(draft('company',{salesCallId:'ended-call',contactId:'second'}),blocked('intro_email_call_contact_changed'));
   await assert.rejects(draft('foreign',{salesCallId:'ended-call'}),blocked('intro_email_call_forbidden'));
   await assert.rejects(draft('company',{salesCallId:'old-test-call'}),blocked('sales_phone_test_external_action_blocked'));
