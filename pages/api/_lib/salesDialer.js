@@ -1,4 +1,4 @@
-import { getSalesOperatorSettings, getSalesProspectDetail, getSalesProspect, enqueueSalesDemoJob, salesError, serializeSalesCallSession } from './salesRepository.js';
+import { salesNoteText, getSalesOperatorSettings, getSalesProspectDetail, getSalesProspect, enqueueSalesDemoJob, salesError, serializeSalesCallSession } from './salesRepository.js';
 
 export const SALES_PHASE_SCRIPTS = Object.freeze({
   opener: "Hi {first_name}, this is {rep_name} with EveryCall. Do you have a minute?",
@@ -86,7 +86,7 @@ export async function getSalesRepQueue(pool,repId,{timezone='UTC',actor={id:repI
   return {queue,readyCount:queue.length,counters:Object.fromEntries(Object.entries(counters.rows[0]).map(([k,v])=>[k,Number(v)])),...await getSalesDialerSettings(pool,actor,env),incoming:await listSalesIncoming(pool,repId),returnItems:await listSalesReturnItems(pool,repId)};
 }
 export async function saveSalesLiveNotes(pool,id,repId,notes) {
-  const result=await pool.query('UPDATE sales_call_sessions SET live_notes=$3,updated_at=NOW() WHERE sales_call_id=$1 AND admin_user_id=$2 RETURNING *',[id,repId,String(notes||'').slice(0,5000)]);
+  const result=await pool.query('UPDATE sales_call_sessions SET live_notes=$3,updated_at=NOW() WHERE sales_call_id=$1 AND admin_user_id=$2 RETURNING *',[id,repId,salesNoteText(notes ?? '')]);
   if(!result.rowCount) throw salesError('sales_call_forbidden','Call not found for this rep.',403);
   return serializeSalesCallSession(result.rows[0]);
 }

@@ -62,7 +62,7 @@ export async function bootstrapSchemaBaseline(pool, { executeSql = sql => pool.q
 // Minimal, real migration-backed schema for offline sales/API fixtures. It does
 // not provision pgvector or certify the complete knowledge-runtime schema.
 // Never use against an existing database: that is the deploy runner's job.
-export async function bootstrapFixtureSchema(pool, { executeSql = sql => pool.query(sql), includePaidBilling = true } = {}) {
+export async function bootstrapFixtureSchema(pool, { executeSql = sql => pool.query(sql), includePaidBilling = true, includeSalesHistory = true } = {}) {
   const existing = await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()");
   if (existing.rows.length) throw new Error('fixture_bootstrap_requires_empty_schema');
   await executeSql('BEGIN');
@@ -88,7 +88,8 @@ export async function bootstrapFixtureSchema(pool, { executeSql = sql => pool.qu
     await bootstrapSchemaBaseline(pool, { executeSql });
     // Fixture-only extensions do not broaden the production remediation runner.
     for (const name of [...REMEDIATION_MIGRATIONS,
-      ...(includePaidBilling ? ['0063_unified_paid_intake.sql', '0064_paid_billing_lifecycle.sql'] : [])]) {
+      ...(includePaidBilling ? ['0063_unified_paid_intake.sql', '0064_paid_billing_lifecycle.sql'] : []),
+      ...(includeSalesHistory ? ['0066_sales_change_history.sql'] : [])]) {
       await executeSql(migrationBody(await readMigration(name)));
       await pool.query('INSERT INTO schema_migrations (name) VALUES ($1)', [name]);
     }

@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { salesAuditPool } from "./salesAuditContext.js";
+import { assertSalesHistoryReady } from "./salesChangeHistory.js";
 import { getAdminActor, getSalesSession, hasSalesSessionCookie, requireSession } from "./auth.js";
 import { buildAuditActor, writeAuditLog } from "./auditLog.js";
 import { ensureTables, getPool } from "./db.js";
@@ -35,7 +37,13 @@ export async function requireSalesAdmin(req, res) {
       const { assertSalesProspectOwner } = await import('./salesDialer.js');
       await assertSalesProspectOwner(pool,String(req.query.prospectId),session.user.id);
     }
-    return { pool, session, admin: session.user };
+    const context = { pool, session, admin: session.user };
+    // GET queue auto-claims are system work, not a rep editing ownership.
+    if (req.method !== "GET") {
+      await assertSalesHistoryReady(pool);
+      context.pool = await salesAuditPool(pool, context);
+    }
+    return context;
   }
   const session = await requireSession(req, res, { role: "admin" });
   if (!session) return null;
@@ -44,7 +52,12 @@ export async function requireSalesAdmin(req, res) {
     res.status(403).json({ ok: false, error: "forbidden" });
     return null;
   }
-  return { pool, session, admin };
+  const context = { pool, session, admin };
+  if (req.method !== "GET") {
+      await assertSalesHistoryReady(pool);
+      context.pool = await salesAuditPool(pool, context);
+    }
+  return context;
 }
 
 function salesAuditActor(context) {

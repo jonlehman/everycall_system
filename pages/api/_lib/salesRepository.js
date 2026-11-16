@@ -19,7 +19,10 @@ export const SALES_OUTCOMES = LEGACY_SALES_OUTCOMES;
 const ACTIVE_CALL_QUEUE_STATUSES = new Set(["queued", "ready_to_call"]);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_IMPORT_ROWS = 5000;
-const MAX_NOTE_LENGTH = 5000;
+export function salesNoteText(value) {
+  if (typeof value !== 'string' || value.includes('\0')) throw salesError('invalid_sales_note', 'Notes must be text without null characters.');
+  return value;
+}
 const DEFAULT_SIGNUP_INVITE_TTL_MINUTES = 60;
 const DEFAULT_SALES_CALL_WINDOW_START_LOCAL = "08:00";
 const DEFAULT_SALES_CALL_WINDOW_END_LOCAL = "20:00";
@@ -2104,8 +2107,8 @@ export async function addSalesProspectNote(pool, {
   adminUserId,
   requireCallOwnership = false
 }) {
-  const normalizedBody = normalizeSalesText(body, MAX_NOTE_LENGTH);
-  if (!normalizedBody) throw salesError("note_required", "Note text is required.");
+  const normalizedBody = salesNoteText(body);
+  if (!normalizedBody.trim()) throw salesError("note_required", "Note text is required.");
   const prospect = await getSalesProspect(pool, prospectId);
   if (!prospect) throw salesError("prospect_not_found", "Prospect not found.", 404);
   const normalizedSalesCallId = normalizeSalesText(salesCallId, 200) || null;
@@ -2537,7 +2540,7 @@ export async function recordSalesCallEvent(pool, {
   return { inserted: false, event: existing.rows[0] || null };
 }
 
-export async function recordSalesCallOutcome(pool, {salesCallId, outcome, dispositions, notes = '', callbackAt = null, dncReason = null}) {
+export async function recordSalesCallOutcome(pool, {salesCallId, outcome, dispositions, notes, callbackAt = null, dncReason = null}) {
   const choices = dispositions === undefined ? [normalizeSalesText(outcome,80).toLowerCase()] : dispositions;
   if (!Array.isArray(choices) || !choices.length || choices.length > SALES_DISPOSITION_KEYS.length || choices.some(key => typeof key !== 'string' || !SALES_DISPOSITION_KEYS.includes(key))) throw salesError('invalid_call_outcome','Call outcome is not supported. Paid is set only by Stripe.');
   const selected = [...new Set(choices)].sort();
@@ -2553,7 +2556,7 @@ export async function recordSalesCallOutcome(pool, {salesCallId, outcome, dispos
     const owner = await db.query('SELECT assigned_rep_user_id FROM sales_prospects WHERE prospect_id=$1 FOR UPDATE', [active.prospect_id]);
     if (Number(owner.rows[0]?.assigned_rep_user_id) !== Number(active.admin_user_id)) throw salesError('prospect_forbidden', 'This prospect has been reassigned. Refresh your workspace.', 403);
     if (!['closed','ended','completed','failed','no_answer','voicemail','wrong_number','not_interested','do_not_call','canceled','cancelled'].includes(active.state)) throw salesError('sales_call_end_required','End the call before saving its outcome.',409);
-    const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,metadata_json=metadata_json || jsonb_build_object('dispositions',$5::jsonb),updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,String(notes||active.live_notes||'').slice(0,5000),normalizedOutcome==='callback_requested'?callbackAt:null,JSON.stringify(selected)]);
+    const result=await db.query(`UPDATE sales_call_sessions SET outcome=CASE WHEN paid_at IS NOT NULL THEN 'paid' ELSE $2 END,outcome_notes=$3,live_notes=$3,outcome_recorded_at=NOW(),callback_at=$4,metadata_json=metadata_json || jsonb_build_object('dispositions',$5::jsonb),updated_at=NOW() WHERE sales_call_id=$1 RETURNING *`,[salesCallId,normalizedOutcome,salesNoteText(notes ?? active.live_notes ?? ''),normalizedOutcome==='callback_requested'?callbackAt:null,JSON.stringify(selected)]);
     // Test dispositions remain reviewable on the call, without changing real contact eligibility or sending followups.
     if (active.metadata_json?.phone_test_mode) return serializeSalesCallSession(result.rows[0]);
     const dnc=['not_interested','do_not_call','wrong_number'].includes(normalizedOutcome);
